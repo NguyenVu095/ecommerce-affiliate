@@ -1,0 +1,257 @@
+﻿
+D:\Project\ecommerce-affiliate\frontend_user\src\components\Navbar.tsx
+  43:5  error  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+D:\Project\ecommerce-affiliate\frontend_user\src\components\Navbar.tsx:43:5
+  41 |   /** ÄĂ³ng mobile menu khi chuyá»ƒn route. */
+  42 |   useEffect(() => {
+> 43 |     setIsMobileMenuOpen(false);
+     |     ^^^^^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  44 |   }, [location.pathname]);
+  45 |
+  46 |   /** Äá»“ng bá»™ search term vá»›i tham sá»‘ URL khi á»Ÿ trang tĂ¬m kiáº¿m. */  react-hooks/set-state-in-effect
+  49:7  error  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+D:\Project\ecommerce-affiliate\frontend_user\src\components\Navbar.tsx:49:7
+  47 |   useEffect(() => {
+  48 |     if (location.pathname === "/search") {
+> 49 |       setSearchTerm(new URLSearchParams(location.search).get("q") || "");
+     |       ^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  50 |     }
+  51 |   }, [location.pathname, location.search]);
+  52 |         react-hooks/set-state-in-effect
+
+D:\Project\ecommerce-affiliate\frontend_user\src\features\account\AccountPage.tsx
+  91:5  error  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+D:\Project\ecommerce-affiliate\frontend_user\src\features\account\AccountPage.tsx:91:5
+  89 |       return;
+  90 |     }
+> 91 |     fetchAddresses();
+     |     ^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  92 |     // Fetch provinces from GHN via proxy
+  93 |     ghnService.getProvinces()
+  94 |       .then((data) => setProvinces(data))  react-hooks/set-state-in-effect
+
+D:\Project\ecommerce-affiliate\frontend_user\src\features\account\OrderHistory.tsx
+   28:8  error    'OrderItemProduct' is defined but never used                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          @typescript-eslint/no-unused-vars
+  665:6  warning  React Hook useCallback has an unnecessary dependency: 'token'. Either exclude it or remove the dependency array                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       react-hooks/exhaustive-deps
+  668:5  error    Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+D:\Project\ecommerce-affiliate\frontend_user\src\features\account\OrderHistory.tsx:668:5
+  666 |
+  667 |   useEffect(() => {
+> 668 |     fetchOrders();
+      |     ^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  669 |   }, [fetchOrders]);
+  670 |
+  671 |   const filtered = filter === "all" ? orders : orders.filter((order) => order.status === filter);  react-hooks/set-state-in-effect
+
+D:\Project\ecommerce-affiliate\frontend_user\src\features\account\OrderLookupPage.tsx
+  14:11  error  'OrderItem' is defined but never used  @typescript-eslint/no-unused-vars
+
+D:\Project\ecommerce-affiliate\frontend_user\src\features\checkout\CheckoutPage.tsx
+  155:13  error    Error: Cannot access variable before it is declared
+
+`applySavedAddress` is accessed before it is declared, which prevents the earlier access from updating when this value changes over time.
+
+D:\Project\ecommerce-affiliate\frontend_user\src\features\checkout\CheckoutPage.tsx:155:13
+  153 |           const defaultAddr = addresses.find((a) => a.is_default);
+  154 |           if (defaultAddr) {
+> 155 |             applySavedAddress(defaultAddr);
+      |             ^^^^^^^^^^^^^^^^^ `applySavedAddress` accessed before it is declared
+  156 |             setSelectedSavedAddress(defaultAddr.id);
+  157 |           }
+  158 |         })
+
+D:\Project\ecommerce-affiliate\frontend_user\src\features\checkout\CheckoutPage.tsx:168:3
+  166 |    * DĂ¹ng useCallback vĂ¬ hĂ m nĂ y Ä‘Æ°á»£c gá»i tá»« bĂªn trong useEffect (trĂ¡nh stale closure).
+  167 |    */
+> 168 |   const applySavedAddress = useCallback(async (addr: UserAddress) => {
+      |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 169 |     setFormData((prev) => ({
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 170 |       ...prev,
+      â€¦
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 185 |     }
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 186 |   }, []);
+      | ^^^^^^^^^^ `applySavedAddress` is declared here
+  187 |
+  188 |   // Táº£i quáº­n/huyá»‡n khi tá»‰nh/thĂ nh thay Ä‘á»•i
+  189 |   useEffect(() => {  react-hooks/immutability
+  168:41  error    Compilation Skipped: Existing memoization could not be preserved
+
+React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. This value was memoized in source but not in compilation output.
+
+D:\Project\ecommerce-affiliate\frontend_user\src\features\checkout\CheckoutPage.tsx:168:41
+  166 |    * DĂ¹ng useCallback vĂ¬ hĂ m nĂ y Ä‘Æ°á»£c gá»i tá»« bĂªn trong useEffect (trĂ¡nh stale closure).
+  167 |    */
+> 168 |   const applySavedAddress = useCallback(async (addr: UserAddress) => {
+      |                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 169 |     setFormData((prev) => ({
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 170 |       ...prev,
+      â€¦
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 185 |     }
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 186 |   }, []);
+      | ^^^^ Could not preserve existing memoization
+  187 |
+  188 |   // Táº£i quáº­n/huyá»‡n khi tá»‰nh/thĂ nh thay Ä‘á»•i
+  189 |   useEffect(() => {                                                                                                                                                                                                                                                                                                                                                                                                        react-hooks/preserve-manual-memoization
+  196:7   error    Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+D:\Project\ecommerce-affiliate\frontend_user\src\features\checkout\CheckoutPage.tsx:196:7
+  194 |         .catch(console.error);
+  195 |     } else {
+> 196 |       setDistricts([]);
+      |       ^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  197 |     }
+  198 |   }, [selectedProv]);
+  199 |                                                                                                                                                                                                                                                                                                                                                             react-hooks/set-state-in-effect
+  208:7   error    Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+D:\Project\ecommerce-affiliate\frontend_user\src\features\checkout\CheckoutPage.tsx:208:7
+  206 |         .catch(console.error);
+  207 |     } else {
+> 208 |       setWards([]);
+      |       ^^^^^^^^ Avoid calling setState() directly within an effect
+  209 |     }
+  210 |   }, [selectedDist]);
+  211 |                                                                                                                                                                                                                                                                                                                                                                     react-hooks/set-state-in-effect
+  225:7   error    Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+D:\Project\ecommerce-affiliate\frontend_user\src\features\checkout\CheckoutPage.tsx:225:7
+  223 |   useEffect(() => {
+  224 |     if (!selectedDist || !selectedWard || items.length === 0) {
+> 225 |       setShippingFee(0);
+      |       ^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  226 |       setIsCalculatingFee(false);
+  227 |       return;
+  228 |     }                                                                                                                                                                                                                                                                                        react-hooks/set-state-in-effect
+  280:53  warning  React Hook useMemo has an unnecessary dependency: 'items'. Either exclude it or remove the dependency array                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            react-hooks/exhaustive-deps
+
+D:\Project\ecommerce-affiliate\frontend_user\src\features\product\AllProductsPage.tsx
+  74:5  error  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+D:\Project\ecommerce-affiliate\frontend_user\src\features\product\AllProductsPage.tsx:74:5
+  72 |
+  73 |   useEffect(() => {
+> 74 |     loadProducts(0, true);
+     |     ^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  75 |   }, [loadProducts]);
+  76 |
+  77 |   useEffect(() => {  react-hooks/set-state-in-effect
+
+D:\Project\ecommerce-affiliate\frontend_user\src\features\product\CategoryPage.tsx
+  119:5  error  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+D:\Project\ecommerce-affiliate\frontend_user\src\features\product\CategoryPage.tsx:119:5
+  117 |
+  118 |   useEffect(() => {
+> 119 |     loadProducts(0, false);
+      |     ^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  120 |   }, [loadProducts]);
+  121 |
+  122 |   const toggleSize = (size: string) => {  react-hooks/set-state-in-effect
+
+D:\Project\ecommerce-affiliate\frontend_user\src\features\product\SalePage.tsx
+  91:5  error  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+D:\Project\ecommerce-affiliate\frontend_user\src\features\product\SalePage.tsx:91:5
+  89 |
+  90 |   useEffect(() => {
+> 91 |     loadProducts(0, true);
+     |     ^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  92 |   }, [loadProducts]);
+  93 |
+  94 |   useEffect(() => {  react-hooks/set-state-in-effect
+
+D:\Project\ecommerce-affiliate\frontend_user\src\features\product\SearchPage.tsx
+  70:5  error  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+D:\Project\ecommerce-affiliate\frontend_user\src\features\product\SearchPage.tsx:70:5
+  68 |
+  69 |   useEffect(() => {
+> 70 |     loadProducts(0, false);
+     |     ^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  71 |   }, [loadProducts]);
+  72 |
+  73 |   return (  react-hooks/set-state-in-effect
+
+D:\Project\ecommerce-affiliate\frontend_user\src\services\productService.ts
+   92:66   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  119:98   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  127:116  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+âœ– 20 problems (18 errors, 2 warnings)
+

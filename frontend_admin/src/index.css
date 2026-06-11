@@ -1,0 +1,219 @@
+/* System font stack — không dùng Google Fonts @import render-blocking để tránh chặn CSS parse
+   và giảm external network request không cần thiết. */
+@import "tailwindcss";
+
+:root {
+  --sidebar-bg: #0f1117;
+  --sidebar-border: #1e2130;
+  --sidebar-text: #8b92a5;
+  --sidebar-active: #6366f1;
+  --content-bg: #f8f9fc;
+  --card-bg: #ffffff;
+  --text-primary: #1a1d2e;
+  --text-secondary: #6b7280;
+  --border-color: #e5e7eb;
+  --accent: #6366f1;
+  --accent-light: #eef2ff;
+  --success: #10b981;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+  --info: #3b82f6;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  height: 100%;
+  /* System font stack: ưu tiên font hệ thống để tăng tốc render ban đầu,
+     tránh FOUT (Flash Of Unstyled Text) do Google Fonts tải chậm. */
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Helvetica Neue', sans-serif;
+  background: var(--content-bg);
+  color: var(--text-primary);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
+
+/* Status badges */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.badge-pending    { background: #fef3c7; color: #92400e; }
+.badge-confirmed  { background: #dbeafe; color: #1d4ed8; }
+.badge-shipping   { background: #e0f2fe; color: #0369a1; }
+.badge-success    { background: #dcfce7; color: #15803d; }
+.badge-cancelled  { background: #fee2e2; color: #b91c1c; }
+.badge-paid       { background: #dcfce7; color: #15803d; }
+.badge-unpaid     { background: #fef3c7; color: #92400e; }
+
+/* Card */
+.admin-card {
+  background: var(--card-bg);
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  border: 1px solid var(--border-color);
+}
+
+/* Table */
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.admin-table th {
+  background: #f9fafb;
+  padding: 10px 16px;
+  text-align: left;
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--border-color);
+}
+.admin-table td {
+  padding: 12px 16px;
+  border-bottom: 1px solid #f3f4f6;
+  vertical-align: middle;
+}
+.admin-table tbody tr:hover { background: #fafafa; }
+.admin-table tbody tr:last-child td { border-bottom: none; }
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+  transition: all 0.15s ease;
+}
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary:hover { background: #4f46e5; }
+.btn-ghost { background: transparent; color: var(--text-secondary); border: 1px solid var(--border-color); }
+.btn-ghost:hover { background: #f3f4f6; color: var(--text-primary); }
+.btn-danger { background: #fee2e2; color: var(--danger); }
+.btn-danger:hover { background: #fecaca; }
+
+/* Input */
+.admin-input {
+  height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  font-size: 14px;
+  color: var(--text-primary);
+  background: #fff;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.admin-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(99,102,241,0.1); }
+
+/* Select */
+.admin-select {
+  height: 38px;
+  padding: 0 32px 0 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  font-size: 14px;
+  color: var(--text-primary);
+  background: #fff;
+  outline: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236b7280' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.admin-select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(99,102,241,0.1); }
+
+/* Animations */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in { animation: fadeInUp 0.25s ease forwards; }
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+.animate-spin { animation: spin 0.8s linear infinite; }
+
+/* Lazy-loading fallback route — hiển thị trạng thái tải rõ ràng */
+.route-fallback {
+  display: grid;
+  min-height: 50vh;
+  place-items: center;
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+/* ─── Responsive Sidebar ──────────────────────────────────────────────────── */
+
+/* Desktop: sidebar always visible, mobile elements hidden */
+@media (min-width: 769px) {
+  .sidebar-desktop { display: flex; height: 100%; }
+  .sidebar-mobile { display: none !important; }
+  .sidebar-mobile-overlay { display: none !important; }
+  .sidebar-hamburger { display: none !important; }
+  .mobile-topbar { display: none !important; }
+  .sidebar-mobile-close { display: none !important; }
+}
+
+/* Mobile: hide desktop sidebar, show hamburger + overlay */
+@media (max-width: 768px) {
+  .sidebar-desktop { display: none !important; }
+
+  /* Mobile topbar (with hamburger) */
+  .mobile-topbar { display: flex !important; }
+
+  /* Hamburger button */
+  .sidebar-hamburger { display: flex !important; }
+
+  /* Mobile sidebar: slide in from left */
+  .sidebar-mobile {
+    display: block !important;
+    transform: translateX(-100%);
+    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    width: 240px;
+  }
+  .sidebar-mobile.open {
+    transform: translateX(0);
+  }
+
+  /* Overlay */
+  .sidebar-mobile-overlay { display: block !important; }
+
+  /* Close button inside sidebar (mobile only) */
+  .sidebar-mobile-close { display: flex !important; }
+
+  /* Content area: full width on mobile */
+  .admin-table { font-size: 12px; }
+  .admin-table th, .admin-table td { padding: 8px 10px; }
+}
+
+/* ─── Toast animation ─────────────────────────────────────────────────────── */
+
+@keyframes toastSlideIn {
+  from { opacity: 0; transform: translateX(24px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
