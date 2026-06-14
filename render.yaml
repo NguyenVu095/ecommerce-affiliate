@@ -1,0 +1,95 @@
+services:
+  - type: keyvalue
+    name: ecommerce-affiliate-redis
+    region: singapore
+    plan: free
+    ipAllowList: []
+    maxmemoryPolicy: allkeys-lru
+    persistenceMode: off
+
+  - type: web
+    name: ecommerce-affiliate-api
+    runtime: docker
+    region: singapore
+    plan: free
+    dockerContext: .
+    dockerfilePath: ./deploy/backend.Dockerfile
+    dockerCommand: /bin/sh -c "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-10000} --proxy-headers --forwarded-allow-ips='*'"
+    healthCheckPath: /health/ready
+    autoDeployTrigger: commit
+    envVars:
+      - key: APP_ENV
+        value: development
+      - key: AUTO_CREATE_SCHEMA
+        value: "false"
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: ecommerce-affiliate-redis
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ALLOWED_HOSTS
+        sync: false
+      - key: ALLOWED_ORIGINS
+        sync: false
+      - key: CUSTOMER_APP_URL
+        sync: false
+      - key: TRUST_PROXY_HEADERS
+        value: "true"
+      - key: ENABLE_HSTS
+        value: "true"
+      - key: REQUIRE_REDIS_RATE_LIMIT
+        value: "true"
+      - key: JWT_EXPIRE_MINUTES
+        value: "60"
+      - key: JWT_ISSUER
+        value: ecommerce-affiliate-api
+      - key: JWT_AUDIENCE
+        value: ecommerce-web
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: VNPAY_ENABLED
+        value: "true"
+      - key: VNPAY_MOCK_ENABLED
+        value: "false"
+      - key: VNPAY_TMN_CODE
+        sync: false
+      - key: VNPAY_HASH_SECRET
+        sync: false
+      - key: VNPAY_URL
+        value: https://sandbox.vnpayment.vn/paymentv2/vpcpay.html
+      - key: VNPAY_API_URL
+        value: https://sandbox.vnpayment.vn/merchant_webapi/api/transaction
+      - key: VNPAY_RETURN_URL
+        sync: false
+      - key: VNPAY_IPN_URL
+        sync: false
+      - key: VNPAY_PAYMENT_EXPIRY_MINUTES
+        value: "15"
+      - key: VNPAY_REQUEST_TIMEOUT_SECONDS
+        value: "10"
+      - key: GHN_TOKEN
+        sync: false
+      - key: GHN_SHOP_ID
+        sync: false
+      - key: GHN_API_URL
+        value: https://dev-online-gateway.ghn.vn/shiip/public-api
+      - key: GHN_SHOP_DISTRICT_ID
+        sync: false
+      - key: GHN_SHOP_WARD_CODE
+        sync: false
+      - key: GHN_SHOP_NAME
+        sync: false
+      - key: GHN_SHOP_PHONE
+        sync: false
+      - key: GHN_SHOP_ADDRESS
+        sync: false
+      - key: GHN_SHOP_WARD_NAME
+        sync: false
+      - key: GHN_SHOP_DISTRICT_NAME
+        sync: false
+      - key: GHN_SHOP_PROVINCE_NAME
+        sync: false
