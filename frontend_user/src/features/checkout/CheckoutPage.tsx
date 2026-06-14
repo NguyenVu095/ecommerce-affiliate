@@ -258,7 +258,7 @@ export default function CheckoutPage() {
           items: checkoutItems.map((i) => ({ variant_id: i.variant_id, quantity: i.quantity })),
         })
          .then((fee) => { if (!cancelled) setShippingFee(fee); })
-         .catch(() => { if (!cancelled) setShippingFee(30000); })
+         .catch(() => { if (!cancelled) setShippingFee(0); })
          .finally(() => { if (!cancelled) setIsCalculatingFee(false); });
     }, 400); // debounce 400ms — tránh gọi API liên tục khi user đang chọn
 
@@ -410,7 +410,7 @@ export default function CheckoutPage() {
         clearSelectedItems();
       }
 
-      if (paymentMethod === "vnpay") {
+      if (paymentMethod.toLowerCase() === "vnpay") {
         // Lấy URL VNPAY qua service (không gọi api.get() inline)
         const paymentUrl = await getVnpayUrl(
           order.id,
@@ -469,7 +469,7 @@ export default function CheckoutPage() {
             <strong>{orderSuccess.orderCode}</strong>
           </p>
 
-          {orderSuccess.paymentMethod === "bank" && (
+          {orderSuccess.paymentMethod.toLowerCase() === "bank_transfer" && (
             <div className="mt-8 bg-slate-50 p-6 rounded-2xl inline-block text-left">
               <h3 className="text-lg font-bold mb-4 text-center">Quét mã để thanh toán</h3>
               <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 mb-4 flex justify-center">
@@ -759,7 +759,7 @@ export default function CheckoutPage() {
                         </svg>
                       </div>
                     ),
-                    bank: (
+                    bank_transfer: (
                       <div className="w-10 h-10 bg-blue-100 text-blue-600 rounded-lg flex items-center justify-center">
                         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
@@ -784,7 +784,7 @@ export default function CheckoutPage() {
                         onChange={() => setPaymentMethod(pm.code)}
                       />
                       <div className="ml-4 flex items-center gap-3">
-                        {iconMap[pm.code] ?? (
+                        {iconMap[pm.code.toLowerCase()] ?? (
                           <div className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center text-slate-500 font-bold text-xs">
                             {pm.code.toUpperCase()}
                           </div>

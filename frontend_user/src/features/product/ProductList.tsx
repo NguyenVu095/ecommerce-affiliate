@@ -97,11 +97,15 @@ export default function ProductList() {
               key={slide.id}
               className={`absolute inset-0 w-full h-full transition-opacity duration-1000 ease-in-out ${index === currentSlide ? 'opacity-100 z-10' : 'opacity-0 z-0 pointer-events-none'}`}
             >
-              <img
-                src={slide.image}
-                alt="Banner"
-                className={`absolute inset-0 w-full h-full object-cover transition-transform duration-[10000ms] ${index === currentSlide ? 'scale-110' : 'scale-100'}`}
-              />
+              {index === currentSlide && (
+                <img
+                  src={slide.image}
+                  alt="Banner"
+                  decoding="async"
+                  fetchPriority={index === 0 ? "high" : "auto"}
+                  className={`absolute inset-0 w-full h-full object-cover transition-transform duration-[10000ms] ${index === currentSlide ? 'scale-110' : 'scale-100'}`}
+                />
+              )}
               <div className="absolute inset-0 bg-gradient-to-t from-slate-900/80 via-slate-900/40 to-transparent"></div>
               <div className="absolute inset-0 flex items-center justify-center text-center px-4 z-20">
                 <div className="max-w-3xl transform transition-all duration-1000 translate-y-0">
@@ -154,7 +158,7 @@ export default function ProductList() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
           {/* Áo Thun */}
           <Link to="/category/ao-thun" className="group relative aspect-square overflow-hidden rounded-2xl bg-slate-100 block">
-            <img src="https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?q=80&w=800&auto=format&fit=crop" alt="Áo thun" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
+            <img src="https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?q=80&w=800&auto=format&fit=crop" alt="Áo thun" loading="lazy" decoding="async" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
             <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 transition-colors"></div>
             <div className="absolute bottom-6 left-6 right-6">
               <h3 className="text-white text-2xl font-bold mb-1">Áo Thun</h3>
@@ -164,7 +168,7 @@ export default function ProductList() {
 
           {/* Quần Jean */}
           <Link to="/category/quan-jean" className="group relative aspect-square overflow-hidden rounded-2xl bg-slate-100 block">
-            <img src="https://images.unsplash.com/photo-1541099649105-f69ad21f3246?q=80&w=800&auto=format&fit=crop" alt="Quần Jean" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
+            <img src="https://images.unsplash.com/photo-1541099649105-f69ad21f3246?q=80&w=800&auto=format&fit=crop" alt="Quần Jean" loading="lazy" decoding="async" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
             <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 transition-colors"></div>
             <div className="absolute bottom-6 left-6 right-6">
               <h3 className="text-white text-2xl font-bold mb-1">Quần Jean</h3>
@@ -174,7 +178,7 @@ export default function ProductList() {
 
           {/* Phụ Kiện */}
           <Link to="/category/phu-kien" className="group relative aspect-square overflow-hidden rounded-2xl bg-slate-100 block">
-            <img src="https://images.unsplash.com/photo-1509319117193-57bab727e09d?q=80&w=800&auto=format&fit=crop" alt="Phụ kiện" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
+            <img src="https://images.unsplash.com/photo-1509319117193-57bab727e09d?q=80&w=800&auto=format&fit=crop" alt="Phụ kiện" loading="lazy" decoding="async" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
             <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 transition-colors"></div>
             <div className="absolute bottom-6 left-6 right-6">
               <h3 className="text-white text-2xl font-bold mb-1">Phụ Kiện</h3>
@@ -184,7 +188,7 @@ export default function ProductList() {
 
           {/* Giày */}
           <Link to="/category/giay" className="group relative aspect-square overflow-hidden rounded-2xl bg-slate-100 block">
-            <img src="https://images.unsplash.com/photo-1491553895911-0055eca6402d?q=80&w=800&auto=format&fit=crop" alt="Giày" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
+            <img src="https://images.unsplash.com/photo-1491553895911-0055eca6402d?q=80&w=800&auto=format&fit=crop" alt="Giày" loading="lazy" decoding="async" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
             <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 transition-colors"></div>
             <div className="absolute bottom-6 left-6 right-6">
               <h3 className="text-white text-2xl font-bold mb-1">Giày / Sneakers</h3>
@@ -283,8 +287,8 @@ export default function ProductList() {
               </Link>
             </div>
             <div className="order-1 lg:order-2 grid grid-cols-2 gap-4">
-              <img src="https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?q=80&w=600&auto=format&fit=crop" alt="Look 1" className="w-full aspect-[3/4] object-cover rounded-2xl translate-y-8 shadow-xl" />
-              <img src="https://images.unsplash.com/photo-1529139574466-a303027c1d8b?q=80&w=600&auto=format&fit=crop" alt="Look 2" className="w-full aspect-[3/4] object-cover rounded-2xl shadow-xl" />
+              <img src="https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?q=80&w=600&auto=format&fit=crop" alt="Look 1" loading="lazy" decoding="async" className="w-full aspect-[3/4] object-cover rounded-2xl translate-y-8 shadow-xl" />
+              <img src="https://images.unsplash.com/photo-1529139574466-a303027c1d8b?q=80&w=600&auto=format&fit=crop" alt="Look 2" loading="lazy" decoding="async" className="w-full aspect-[3/4] object-cover rounded-2xl shadow-xl" />
             </div>
           </div>
         </div>
@@ -313,7 +317,7 @@ export default function ProductList() {
                 <ShieldCheck className="w-8 h-8" />
               </div>
               <h4 className="font-bold text-slate-900 mb-2">Thanh Toán An Toàn</h4>
-              <p className="text-sm text-slate-500">Bảo mật 100% qua cổng VNPAY.</p>
+              <p className="text-sm text-slate-500">Giá và phương thức thanh toán được xác minh ở máy chủ.</p>
             </div>
             <div className="flex flex-col items-center text-center">
               <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mb-4 text-slate-900">

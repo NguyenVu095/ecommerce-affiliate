@@ -1,8 +1,12 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getOrderDetailApi, updateOrderStatusApi, getErrorMessage } from '../../services/api'
+import {
+  getOrderDetailApi,
+  updateOrderStatusApi,
+  getErrorMessage,
+} from '../../services/api'
 import TopBar from '../../components/TopBar'
-import { ArrowLeft, Package, User, MapPin, CreditCard, Truck, Save, CheckCircle, Clock, XCircle, AlertTriangle } from 'lucide-react'
+import { ArrowLeft, Package, User, MapPin, Truck, Save, CheckCircle, Clock, XCircle, AlertTriangle } from 'lucide-react'
 
 interface OrderItem {
   id: number
@@ -53,26 +57,29 @@ const fmt = (n: number) =>
 const fmtDate = (s: string) =>
   new Date(s).toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 
+const paymentLabel = (status: string) => ({
+  paid: '✓ Đã thanh toán',
+  unpaid: '⏳ Chưa thanh toán',
+  refunded: '↩ Đã hoàn tiền',
+}[status] || status)
+
 export default function OrderDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const [order, setOrder] = useState<OrderDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [newStatus, setNewStatus] = useState('')
-  const [statusNote, setStatusNote] = useState('')
+  const [cancelReason, setCancelReason] = useState('')
   const [saving, setSaving] = useState(false)
   const [saveMsg, setSaveMsg] = useState('')
   const [confirmOpen, setConfirmOpen] = useState(false)
 
-  // Trạng thái cần xác nhận trước khi thực hiện
-  const DANGEROUS_STATUSES = ['cancelled', 'success']
-
   useEffect(() => {
     if (!id) return
     getOrderDetailApi(Number(id))
-      .then(r => {
-        setOrder(r.data)
-        setNewStatus(r.data.status)
+      .then(orderResponse => {
+        setOrder(orderResponse.data)
+        setNewStatus(orderResponse.data.status)
       })
       .catch(console.error)
       .finally(() => setLoading(false))
@@ -80,8 +87,7 @@ export default function OrderDetailPage() {
 
   const handleSaveStatus = () => {
     if (!order || newStatus === order.status) return
-    // Trạng thái nguy hiểm → hiện modal confirm
-    if (DANGEROUS_STATUSES.includes(newStatus)) {
+    if (newStatus === 'cancelled') {
       setConfirmOpen(true)
       return
     }
@@ -94,10 +100,12 @@ export default function OrderDetailPage() {
     setSaving(true)
     setSaveMsg('')
     try {
-      await updateOrderStatusApi(order.id, newStatus, statusNote)
-      setOrder(prev => prev ? { ...prev, status: newStatus } : prev)
+      await updateOrderStatusApi(order.id, newStatus, newStatus === 'cancelled' ? cancelReason.trim() : undefined)
+      const refreshedOrder = await getOrderDetailApi(order.id)
+      setOrder(refreshedOrder.data)
+      setNewStatus(refreshedOrder.data.status)
       setSaveMsg('✅ Cập nhật trạng thái thành công!')
-      setStatusNote('')
+      setCancelReason('')
     } catch (e: unknown) {
       setSaveMsg('❌ ' + getErrorMessage(e, 'Có lỗi xảy ra'))
     } finally {
@@ -139,12 +147,18 @@ export default function OrderDetailPage() {
 
   const statusInfo = STATUS_OPTIONS.find(s => s.value === order.status)
   const newStatusInfo = STATUS_OPTIONS.find(s => s.value === newStatus)
+  const allowedStatusValues = order.status === 'pending'
+    ? ['pending', 'confirmed', 'cancelled']
+    : order.status === 'confirmed'
+      ? ['confirmed', 'cancelled']
+      : [order.status]
+  const editableStatus = order.status === 'pending' || order.status === 'confirmed'
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
       <TopBar title={`Đơn hàng #${order.order_code}`} subtitle={order.created_at ? fmtDate(order.created_at) : ''} />
 
-      {/* Confirm modal for dangerous status changes */}
+      {/* Confirm cancellation and collect its audit reason. */}
       {confirmOpen && order && newStatusInfo && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
           onClick={() => setConfirmOpen(false)}>
@@ -165,25 +179,36 @@ export default function OrderDetailPage() {
             <div style={{ fontSize: 14, color: '#6b7280', marginBottom: 16, lineHeight: 1.6 }}>
               Bạn sắp chuyển đơn hàng <strong>{order.order_code}</strong> sang trạng thái{' '}
               <strong style={{ color: newStatusInfo.color }}>{newStatusInfo.label}</strong>.
-              {newStatus === 'cancelled' && (
-                <span style={{ display: 'block', marginTop: 8, padding: '8px 12px', background: '#fff7ed', borderRadius: 8, color: '#c2410c', fontSize: 13, fontWeight: 500 }}>
-                  ⚠️ Hành động này sẽ hủy hoa hồng affiliate (nếu có) và khó hoàn tác.
-                </span>
-              )}
-              {newStatus === 'success' && (
-                <span style={{ display: 'block', marginTop: 8, padding: '8px 12px', background: '#f0fdf4', borderRadius: 8, color: '#15803d', fontSize: 13, fontWeight: 500 }}>
-                  ✅ Hành động này sẽ xác nhận hoa hồng affiliate (nếu có) và đánh dấu đã thanh toán.
-                </span>
-              )}
+              <span style={{ display: 'block', marginTop: 8, padding: '8px 12px', background: '#fff7ed', borderRadius: 8, color: '#c2410c', fontSize: 13, fontWeight: 500 }}>
+                ⚠️ {order.payment_status === 'paid'
+                  ? 'Hành động này sẽ hoàn tiền cho khách hàng.'
+                  : 'Hành động này sẽ hủy đơn hàng và hoàn lại tồn kho.'}
+              </span>
             </div>
+            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#4b5563', marginBottom: 6 }}>
+              Lý do hủy
+            </label>
+            <textarea
+              autoFocus
+              value={cancelReason}
+              onChange={event => setCancelReason(event.target.value)}
+              placeholder="Nhập lý do hủy đơn..."
+              rows={3}
+              style={{
+                width: '100%', padding: '10px 12px', border: '1px solid #d1d5db',
+                borderRadius: 8, fontSize: 13, resize: 'none', fontFamily: 'inherit',
+                marginBottom: 16,
+              }}
+            />
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
               <button className="btn btn-ghost" onClick={() => setConfirmOpen(false)}>Hủy bỏ</button>
               <button
                 className="btn"
                 onClick={doSaveStatus}
+                disabled={saving || cancelReason.trim().length < 5}
                 style={{ background: newStatus === 'cancelled' ? '#ef4444' : '#10b981', color: '#fff' }}
               >
-                Xác nhận
+                {saving ? 'Đang xử lý...' : 'Xác nhận'}
               </button>
             </div>
           </div>
@@ -202,7 +227,7 @@ export default function OrderDetailPage() {
             </span>
           )}
           <span className={`badge badge-${order.payment_status}`} style={{ fontSize: 13, padding: '4px 14px' }}>
-            {order.payment_status === 'paid' ? '✓ Đã thanh toán' : '⏳ Chưa thanh toán'}
+            {paymentLabel(order.payment_status)}
           </span>
         </div>
 
@@ -329,15 +354,16 @@ export default function OrderDetailPage() {
               <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
                 {/* Status radio buttons */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {STATUS_OPTIONS.map(({ value, label, icon: Icon, color, bg }) => (
+                  {STATUS_OPTIONS.filter(option => allowedStatusValues.includes(option.value)).map(({ value, label, icon: Icon, color, bg }) => (
                     <label
                       key={value}
                       style={{
                         display: 'flex', alignItems: 'center', gap: 10,
-                        padding: '10px 14px', borderRadius: 8, cursor: 'pointer',
+                        padding: '10px 14px', borderRadius: 8, cursor: editableStatus ? 'pointer' : 'default',
                         border: `2px solid ${newStatus === value ? color : 'transparent'}`,
                         background: newStatus === value ? bg : '#f9fafb',
                         transition: 'all 0.15s',
+                        opacity: editableStatus ? 1 : 0.75,
                       }}
                     >
                       <input
@@ -346,6 +372,7 @@ export default function OrderDetailPage() {
                         value={value}
                         checked={newStatus === value}
                         onChange={() => setNewStatus(value)}
+                        disabled={!editableStatus}
                         style={{ accentColor: color }}
                       />
                       <Icon size={14} color={color} />
@@ -354,23 +381,11 @@ export default function OrderDetailPage() {
                   ))}
                 </div>
 
-                {/* Note */}
-                <div>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>
-                    Ghi chú (tuỳ chọn)
-                  </label>
-                  <textarea
-                    value={statusNote}
-                    onChange={e => setStatusNote(e.target.value)}
-                    placeholder="Lý do thay đổi trạng thái..."
-                    rows={2}
-                    style={{
-                      width: '100%', padding: '8px 12px', border: '1px solid var(--border-color)',
-                      borderRadius: 8, fontSize: 13, outline: 'none', resize: 'none',
-                      fontFamily: 'inherit',
-                    }}
-                  />
-                </div>
+                {!editableStatus && (
+                  <div style={{ padding: '9px 12px', borderRadius: 8, background: '#f1f5f9', color: '#64748b', fontSize: 12, lineHeight: 1.5 }}>
+                    Trạng thái giao hàng chỉ được cập nhật tại trang Vận chuyển.
+                  </div>
+                )}
 
                 {saveMsg && (
                   <div style={{
@@ -385,7 +400,7 @@ export default function OrderDetailPage() {
                 <button
                   className="btn btn-primary"
                   style={{ width: '100%', justifyContent: 'center', opacity: (saving || newStatus === order.status) ? 0.6 : 1 }}
-                  disabled={saving || newStatus === order.status}
+                  disabled={!editableStatus || saving || newStatus === order.status}
                   onClick={handleSaveStatus}
                 >
                   {saving ? (
@@ -403,18 +418,6 @@ export default function OrderDetailPage() {
               </div>
             </div>
 
-            {/* Payment info */}
-            <div className="admin-card animate-fade-in">
-              <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: 8 }}>
-                <CreditCard size={16} color="#6366f1" />
-                <h3 style={{ fontWeight: 600, fontSize: 15 }}>Thanh toán</h3>
-              </div>
-              <div style={{ padding: '16px 20px' }}>
-                <span className={`badge badge-${order.payment_status}`} style={{ fontSize: 13, padding: '4px 14px' }}>
-                  {order.payment_status === 'paid' ? '✓ Đã thanh toán' : '⏳ Chưa thanh toán'}
-                </span>
-              </div>
-            </div>
           </div>
         </div>
       </div>

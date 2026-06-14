@@ -5,14 +5,13 @@ Các hằng số cấu hình VNPay được load sớm (module-level) để fail
 khi server khởi động nếu môi trường chưa được cấu hình đúng.
 """
 
-import hashlib
-import hmac
 import logging
 import os
 import urllib.parse
 import uuid
 from collections import defaultdict
 from datetime import datetime, timezone
+from typing import Any
 
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -22,19 +21,30 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.core.cache import home_products_cache, product_cards_cache
 from app.core.deps import get_current_user, get_current_user_optional
-from app.core.rate_limit import guest_order_create_rate_limiter, guest_order_lookup_rate_limiter
-from app.core.security import validate_secret_strength
+from app.core.rate_limit import get_trusted_client_ip, guest_order_create_rate_limiter, guest_order_lookup_rate_limiter
 from app.core.validation import clean_required_text, clean_text, normalize_public_code
 from app.db.database import get_db
 from app.modules.affiliate.models import AffiliateCommission, AffiliateConversion, AffiliateLink
-from app.modules.affiliate.routes import resolve_referrer
+from app.modules.affiliate.routes import _dashboard_cache_invalidate, resolve_referrer
 from app.modules.coupon.models import Coupon, CouponUsage
 from app.modules.coupon.service import (
     calculate_coupon_discount,
     coupon_ineligibility_reason,
     get_user_coupon_usage_count,
 )
-from app.modules.order.models import Order, OrderItem, PaymentMethod, ShippingMethod
+from app.modules.order.models import Order, OrderItem, PaymentMethod, PaymentTransaction, ShippingMethod
+from app.modules.order.payment_service import (
+    VNPAY_ENABLED,
+    VNPAY_HASH_SECRET,
+    VNPAY_MOCK_ENABLED,
+    VNPAY_TMN_CODE,
+    build_mock_payment_url,
+    build_vnpay_payment_url,
+    get_or_create_payment_transaction,
+    process_vnpay_ipn,
+    to_vnpay_amount,
+    verify_vnpay_signature,
+)
 from app.modules.order.schemas import (
     OrderCreate,
     OrderListResponse,
@@ -43,50 +53,58 @@ from app.modules.order.schemas import (
     ShippingMethodResponse,
 )
 from app.modules.product.review_models import ProductReview
+from app.modules.product.models import Product
 from app.modules.product.variant_models import ProductVariant
+from app.modules.shipping.routes import calculate_ghn_shipping_fee
+from app.modules.shipping.schemas import ShippingFeeRequest
 from app.modules.user.models import User
 
 load_dotenv()
 
-# ── Cấu hình VNPay (Fail-fast khi khởi động nếu thiếu hoặc dùng giá trị yếu) ──
-VNPAY_HASH_SECRET = validate_secret_strength(os.getenv("VNPAY_HASH_SECRET"), name="VNPAY_HASH_SECRET")
-
-VNPAY_MOCK_ENABLED = os.getenv("VNPAY_MOCK_ENABLED", "false").lower() in {"1", "true", "yes", "on"}
 CUSTOMER_APP_URL = os.getenv("CUSTOMER_APP_URL", "http://localhost:5173").rstrip("/")
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+SUPPORTED_OFFLINE_PAYMENT_CODES = {"COD"}
 
 
-# ── Hàm tiện ích VNPay ────────────────────────────────────────────────────────
-
-def calculate_vnpay_signature(vnp_params: dict, secret: str) -> str:
-    """Tính chữ ký HMAC-SHA512 cho bộ tham số VNPay.
-
-    Lọc các key bắt đầu bằng 'vnp_' (ngoại trừ vnp_SecureHash / vnp_SecureHashType),
-    sắp xếp theo alphabet rồi ghép thành chuỗi key=value&... trước khi ký.
-    """
-    filtered_params = {
-        k: str(v)
-        for k, v in vnp_params.items()
-        if k.startswith("vnp_") and k not in ("vnp_SecureHash", "vnp_SecureHashType")
-    }
-    sorted_params = sorted(filtered_params.items())
-    query_str = "&".join(f"{k}={v}" for k, v in sorted_params)
-    return hmac.new(
-        secret.encode("utf-8"),
-        query_str.encode("utf-8"),
-        hashlib.sha512,
-    ).hexdigest()
+def payment_method_is_supported(code: str) -> bool:
+    normalized = code.strip().upper()
+    return normalized in SUPPORTED_OFFLINE_PAYMENT_CODES or (normalized == "VNPAY" and VNPAY_ENABLED)
 
 
-def verify_vnpay_signature(query_params: dict, secret: str) -> bool:
-    """Xác thực chữ ký callback từ VNPay bằng so sánh constant-time (hmac.compare_digest)."""
-    secure_hash = query_params.get("vnp_SecureHash")
-    if not secure_hash:
-        return False
-    calculated_hash = calculate_vnpay_signature(query_params, secret)
-    return hmac.compare_digest(calculated_hash, secure_hash)
+def ensure_order_can_be_cancelled(order: Order) -> None:
+    """Block cancellation until a paid order has been refunded through an audited process."""
+    if order.payment_status == "paid":
+        raise HTTPException(
+            status_code=409,
+            detail="Paid orders cannot be cancelled until the payment has been refunded.",
+        )
+
+
+def ensure_order_can_be_completed(db: Session, order: Order) -> None:
+    """Require gateway confirmation for VNPay while marking COD paid on delivery."""
+    payment_method = db.query(PaymentMethod).filter(PaymentMethod.id == order.payment_method_id).first()
+    payment_code = payment_method.code.strip().upper() if payment_method else ""
+    if payment_code == "VNPAY" and order.payment_status != "paid":
+        raise HTTPException(
+            status_code=409,
+            detail="VNPay orders cannot be completed before a successful IPN or reconciliation.",
+        )
+    if payment_code == "COD" and order.payment_status == "unpaid":
+        order.payment_status = "paid"
+    elif payment_code != "VNPAY" and payment_code != "COD":
+        raise HTTPException(status_code=409, detail="Unsupported payment method cannot be completed.")
+
+
+def calculate_weighted_commission(
+    line_items: list[tuple[float, int, float]],
+    total_base_price: float,
+) -> tuple[float, float]:
+    """Return total commission and its effective weighted percentage."""
+    amount = round(sum(price * quantity * rate / 100 for price, quantity, rate in line_items), 2)
+    effective_rate = round(amount * 100 / total_base_price, 2) if total_base_price > 0 else 0.0
+    return amount, effective_rate
 
 
 # ── Hàm serialize đơn hàng (dùng chung cho nhiều endpoints) ──────────────────
@@ -103,6 +121,7 @@ def serialize_order(order: Order, review_map: dict[int, ProductReview] | None = 
         "order_code": order.order_code,
         "status": order.status,
         "payment_status": order.payment_status,
+        "payment_method_code": order.payment_method.code if order.payment_method else None,
         "user_id": order.user_id,
         "coupon_id": order.coupon_id,
         "coupon_code": order.coupon_code,
@@ -162,7 +181,8 @@ def serialize_order(order: Order, review_map: dict[int, ProductReview] | None = 
 @router.get("/payment-methods", response_model=list[PaymentMethodResponse])
 def get_payment_methods(db: Session = Depends(get_db)) -> list[PaymentMethod]:
     """Trả về danh sách phương thức thanh toán đang hoạt động."""
-    return db.query(PaymentMethod).filter(PaymentMethod.status == 1).all()
+    methods = db.query(PaymentMethod).filter(PaymentMethod.status == 1).all()
+    return [method for method in methods if payment_method_is_supported(method.code)]
 
 
 @router.get("/shipping-methods", response_model=list[ShippingMethodResponse])
@@ -282,6 +302,7 @@ def create_order(
     serialize_order() trực tiếp trên object đã được session track sau flush()
     — giảm 1 roundtrip SELECT thừa.
     """
+    affiliate_dashboard_user_id: int | None = None
     try:
         if not current_user:
             guest_order_create_rate_limiter(request)
@@ -306,6 +327,7 @@ def create_order(
         total_base_price = 0.0
         variant_prices: dict[int, float] = {}  # Lưu giá thực tế để tạo OrderItem
         variant_skus: dict[int, str | None] = {}
+        variant_product_ids: dict[int, int] = {}
 
         # Gom số lượng các item có cùng variant_id (nếu client gửi trùng lặp)
         qty_map: dict[int, int] = defaultdict(int)
@@ -320,7 +342,13 @@ def create_order(
             # Truy vấn và khóa dòng để đảm bảo không bị cập nhật bất đồng bộ
             variant = (
                 db.query(ProductVariant)
-                .filter(ProductVariant.id == vid)
+                .join(Product, Product.id == ProductVariant.product_id)
+                .filter(
+                    ProductVariant.id == vid,
+                    ProductVariant.status == 1,
+                    Product.status == 1,
+                    Product.deleted_at.is_(None),
+                )
                 .with_for_update()
                 .first()
             )
@@ -338,6 +366,7 @@ def create_order(
             total_base_price += actual_price * qty
             variant_prices[variant.id] = actual_price
             variant_skus[variant.id] = variant.sku if hasattr(variant, "sku") else None
+            variant_product_ids[variant.id] = variant.product_id
 
         # ── 2. Phí vận chuyển (Tính từ DB, KHÔNG TIN TỪ FRONTEND) ─────────────
         shipping_fee = 0.0
@@ -347,7 +376,23 @@ def create_order(
                 ShippingMethod.status == 1,
             ).first()
             if sm:
-                shipping_fee = float(sm.cost)
+                if sm.service_type_id:
+                    if not order_data.to_district_id or not order_data.to_ward_code:
+                        raise HTTPException(status_code=400, detail="GHN shipping requires district and ward")
+                    shipping_fee = calculate_ghn_shipping_fee(
+                        ShippingFeeRequest(
+                            to_district_id=order_data.to_district_id,
+                            to_ward_code=order_data.to_ward_code,
+                            service_type_id=sm.service_type_id,
+                            items=[
+                                {"variant_id": variant_id, "quantity": quantity}
+                                for variant_id, quantity in qty_map.items()
+                            ],
+                        ),
+                        db,
+                    )
+                else:
+                    shipping_fee = float(sm.cost)
             else:
                 raise HTTPException(status_code=400, detail="Phương thức vận chuyển không hợp lệ")
         else:
@@ -359,6 +404,8 @@ def create_order(
         ).first()
         if not payment_method:
             raise HTTPException(status_code=400, detail="Phương thức thanh toán không hợp lệ")
+        if not payment_method_is_supported(payment_method.code):
+            raise HTTPException(status_code=400, detail="Payment method is not supported")
 
         # ── 3. Xử lý coupon (Tính toán 100% ở Backend, KHÔNG TIN TỪ FRONTEND) ──
         discount_amount = 0.0
@@ -488,17 +535,36 @@ def create_order(
                     if link:
                         affiliate_link_id = link.id
 
-                commission_rate = 10.0
+                product_rates = {
+                    product_id: float(rate)
+                    for product_id, rate in (
+                        db.query(Product.id, Product.commission_rate)
+                        .filter(Product.id.in_(set(variant_product_ids.values())))
+                        .all()
+                    )
+                }
+                commission_amount, commission_rate = calculate_weighted_commission(
+                    [
+                        (
+                            variant_prices[variant_id],
+                            quantity,
+                            product_rates.get(variant_product_ids[variant_id], 0.0),
+                        )
+                        for variant_id, quantity in qty_map.items()
+                    ],
+                    total_base_price,
+                )
                 commission = AffiliateCommission(
                     order_id=new_order.id,
                     user_id=referrer.id,
                     affiliate_link_id=affiliate_link_id,
                     order_total=total_base_price,
                     commission_rate=commission_rate,
-                    amount=round(total_base_price * commission_rate / 100, 2),
+                    amount=commission_amount,
                     status="pending",
                     note=f"Auto-created from referral {affiliate_referral_code}",
                 )
+                affiliate_dashboard_user_id = referrer.id
                 db.add(commission)
                 db.flush()
                 db.add(AffiliateConversion(
@@ -532,6 +598,8 @@ def create_order(
         # Invalidate cache vì tồn kho đã đổi
         home_products_cache.invalidate()
         product_cards_cache.invalidate()
+        if affiliate_dashboard_user_id:
+            _dashboard_cache_invalidate(affiliate_dashboard_user_id)
 
         return new_order
 
@@ -552,6 +620,7 @@ def create_order(
 @router.patch("/{order_id}/cancel")
 def cancel_my_order(
     order_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict:
@@ -567,7 +636,7 @@ def cancel_my_order(
         order = (
             db.query(Order)
             .filter(Order.id == order_id, Order.user_id == current_user.id)
-            .with_for_update()
+            .with_for_update(of=Order)
             .first()
         )
         if not order:
@@ -579,11 +648,27 @@ def cancel_my_order(
                 status_code=400,
                 detail=f"Không thể hủy đơn hàng đang ở trạng thái '{order.status}'",
             )
+
+        payment_method = db.query(PaymentMethod).filter(PaymentMethod.id == order.payment_method_id).first()
+        payment_code = payment_method.code.strip().upper() if payment_method else ""
+
+        refund_status = None
         if order.payment_status == "paid":
-            raise HTTPException(
-                status_code=400,
-                detail="Không thể hủy đơn hàng đã thanh toán. Vui lòng liên hệ hỗ trợ để xử lý hoàn tiền.",
-            )
+            if payment_code == "VNPAY":
+                from app.modules.order.payment_service import initiate_full_refund
+                from app.core.rate_limit import get_trusted_client_ip
+
+                refund = initiate_full_refund(
+                    db=db,
+                    order_id=order.id,
+                    admin_id=current_user.id,
+                    reason="Khách hàng tự hủy đơn",
+                    client_ip=get_trusted_client_ip(request),
+                )
+                refund_status = refund.status
+                db.refresh(order)
+            else:
+                ensure_order_can_be_cancelled(order)
 
         # Hoàn lại stock: batch load tất cả variants cần hoàn trả bằng 1 query
         # với with_for_update() thay vì N queries riêng lẻ trong vòng lặp — giảm từ N xuống 1 query.
@@ -624,8 +709,19 @@ def cancel_my_order(
         # Invalidate cache vì tồn kho đã hoàn lại
         home_products_cache.invalidate()
         product_cards_cache.invalidate()
+        if commission:
+            _dashboard_cache_invalidate(commission.user_id)
 
-        return {"message": "Đơn hàng đã được hủy thành công", "order_id": order.id, "status": "cancelled"}
+        return {
+            "message": (
+                "Đơn hàng đã được hủy; VNPay đang xử lý hoàn tiền."
+                if refund_status == "pending"
+                else "Đơn hàng đã được hủy thành công"
+            ),
+            "order_id": order.id,
+            "status": "cancelled",
+            "refund_status": refund_status,
+        }
 
     except Exception as e:
         db.rollback()
@@ -635,24 +731,27 @@ def cancel_my_order(
 @router.get("/{order_id}/vnpay-url")
 def get_vnpay_payment_url(
     order_id: int,
+    request: Request,
     order_code: str | None = Query(None),
     contact: str | None = Query(None),
     db: Session = Depends(get_db),
     current_user: User | None = Depends(get_current_user_optional),
     _: None = Depends(guest_order_lookup_rate_limiter),
 ) -> dict:
-    """Tạo URL thanh toán VNPay Mock cho đơn hàng.
+    """Tạo URL thanh toán VNPay (Mock hoặc Sandbox/Thật) cho đơn hàng.
 
     Hỗ trợ cả người dùng đã đăng nhập (xác thực qua JWT) lẫn khách vãng lai
-    (xác thực qua order_code + số điện thoại/email). Tạo 2 callback URL (thành
-    công/thất bại) được ký bằng HMAC-SHA512 để frontend mock dùng.
+    (xác thực qua order_code + số điện thoại/email).
     """
-    if not VNPAY_MOCK_ENABLED:
-        raise HTTPException(status_code=503, detail="VNPAY mock payment is disabled.")
+    if not VNPAY_ENABLED:
+        raise HTTPException(status_code=503, detail="VNPAY payment is disabled.")
 
-    order = db.query(Order).filter(Order.id == order_id).first()
+    order = db.query(Order).filter(Order.id == order_id).with_for_update(of=Order).first()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
+    payment_method = db.query(PaymentMethod).filter(PaymentMethod.id == order.payment_method_id).first()
+    if not payment_method or payment_method.code.strip().upper() != "VNPAY":
+        raise HTTPException(status_code=400, detail="Order does not use VNPAY payment")
 
     if current_user:
         if order.user_id != current_user.id:
@@ -668,142 +767,50 @@ def get_vnpay_payment_url(
         if order.order_code != normalized_code or not contact_matches:
             raise HTTPException(status_code=403, detail="Order verification failed")
 
-    if order.payment_status == "paid" or order.status in {"success", "cancelled"}:
+    if order.payment_status != "unpaid" or order.status in {"success", "cancelled"}:
         raise HTTPException(status_code=400, detail="Order is not payable")
 
-    # Tạo các tham số cho kịch bản callback thành công
-    success_params = {
-        "vnp_TxnRef": str(order.id),
-        "vnp_ResponseCode": "00",
-        "vnp_Amount": str(int(order.total_final)),
-    }
-    success_hash = calculate_vnpay_signature(success_params, VNPAY_HASH_SECRET)
-    success_callback = (
-        f"/api/orders/vnpay-return?vnp_TxnRef={order.id}"
-        f"&vnp_ResponseCode=00&vnp_Amount={int(order.total_final)}&vnp_SecureHash={success_hash}"
+    transaction = get_or_create_payment_transaction(db, order, get_trusted_client_ip(request))
+    payment_url = (
+        build_mock_payment_url(transaction, CUSTOMER_APP_URL)
+        if VNPAY_MOCK_ENABLED
+        else build_vnpay_payment_url(transaction, order)
     )
-
-    # Tạo các tham số cho kịch bản callback thất bại
-    fail_params = {
-        "vnp_TxnRef": str(order.id),
-        "vnp_ResponseCode": "24",
-        "vnp_Amount": str(int(order.total_final)),
-    }
-    fail_hash = calculate_vnpay_signature(fail_params, VNPAY_HASH_SECRET)
-    fail_callback = (
-        f"/api/orders/vnpay-return?vnp_TxnRef={order.id}"
-        f"&vnp_ResponseCode=24&vnp_Amount={int(order.total_final)}&vnp_SecureHash={fail_hash}"
-    )
-
-    # Redirect đến trang mock của frontend kèm theo hai callback url đã được ký bởi backend
-    mock_url = (
-        f"{CUSTOMER_APP_URL}/vnpay-mock?order_id={order.id}&amount={order.total_final}"
-        f"&success_callback={urllib.parse.quote(success_callback)}"
-        f"&fail_callback={urllib.parse.quote(fail_callback)}"
-    )
-    return {"payment_url": mock_url}
+    db.commit()
+    return {"payment_url": payment_url}
 
 
 @router.get("/vnpay-return")
-def vnpay_return(
-    request: Request,
-    vnp_TxnRef: int,
-    vnp_ResponseCode: str,
-    vnp_Amount: int = Query(gt=0),
-    db: Session = Depends(get_db),
-) -> dict:
-    """Callback endpoint nhận kết quả thanh toán từ VNPay (Mock).
+def vnpay_return(request: Request, db: Session = Depends(get_db)) -> Any:
+    """Validate the browser callback and redirect without confirming payment."""
+    from fastapi.responses import RedirectResponse
+    from app.modules.order.payment_service import process_vnpay_return
 
-    Xác thực chữ ký HMAC-SHA512 trước mọi xử lý nghiệp vụ.
-    Tối ưu N+1 trong luồng hoàn trả khi thanh toán thất bại: batch load tất cả
-    variants bằng 1 query .in_() + with_for_update() thay vì N queries riêng lẻ
-    — giảm từ N queries xuống 1 query.
-    """
-    # Xác thực chữ ký số callback VNPay
+    if not VNPAY_ENABLED:
+        raise HTTPException(status_code=503, detail="VNPAY payment is disabled.")
+
     query_params = dict(request.query_params)
-    if not verify_vnpay_signature(query_params, VNPAY_HASH_SECRET):
-        raise HTTPException(status_code=400, detail="Chữ ký thanh toán không hợp lệ (Signature verification failed)")
+    _, order = process_vnpay_return(db, query_params)
 
-    try:
-        # Khóa dòng đơn hàng bằng with_for_update() để tránh race condition ghi đè trạng thái
-        order = db.query(Order).filter(Order.id == vnp_TxnRef).with_for_update().first()
-        if not order:
-            raise HTTPException(status_code=404, detail="Order not found")
-        if vnp_Amount != int(order.total_final):
-            raise HTTPException(status_code=400, detail="Số tiền thanh toán không khớp với đơn hàng")
+    gateway_result = (
+        "accepted"
+        if query_params.get("vnp_ResponseCode") == "00" and query_params.get("vnp_TransactionStatus") == "00"
+        else "failed"
+    )
+    contact_info = order.receiver_phone or order.receiver_email or ""
+    return RedirectResponse(
+        url=(
+            f"{CUSTOMER_APP_URL}/order-lookup"
+            f"?order_code={urllib.parse.quote(order.order_code)}"
+            f"&contact={urllib.parse.quote(contact_info)}"
+            f"&payment_result={gateway_result}"
+        )
+    )
 
-        # Chặn ghi đè trạng thái terminal: nếu đã thanh toán thành công, đã giao hoặc đã bị hủy
-        if order.payment_status == "paid" or order.status in {"success", "cancelled"}:
-            return {
-                "message": "Đơn hàng đã được xử lý trước đó",
-                "order_id": order.id,
-                "payment_status": order.payment_status,
-                "status": order.status,
-            }
 
-        if vnp_ResponseCode == "00":
-            order.payment_status = "paid"
-            if order.status == "pending":
-                order.status = "confirmed"
-            db.commit()
-            logger.info("Thanh toán VNPay thành công: order_id=%s", order.id)
-            return {"message": "Thanh toán thành công", "order_id": order.id, "payment_status": order.payment_status}
-
-        else:
-            if order.status not in {"pending", "confirmed"}:
-                return {
-                    "message": "Không thể hủy thanh toán cho đơn hàng đã vào quy trình xử lý",
-                    "order_id": order.id,
-                    "payment_status": order.payment_status,
-                    "status": order.status,
-                }
-
-            order.payment_status = "unpaid"
-            order.status = "cancelled"
-
-            # Hoàn trả tài nguyên khi thanh toán thất bại
-            # 1. Hoàn lại stock: batch load variants bằng 1 query .in_() + with_for_update()
-            #    thay vì N queries riêng lẻ trong vòng lặp — giảm từ N queries xuống 1 query.
-            items = db.query(OrderItem).filter(OrderItem.order_id == order.id).all()
-            variant_ids = [item.variant_id for item in items]
-            if variant_ids:
-                variants = (
-                    db.query(ProductVariant)
-                    .filter(ProductVariant.id.in_(variant_ids))
-                    .with_for_update()
-                    .all()
-                )
-                variant_map: dict[int, ProductVariant] = {v.id: v for v in variants}
-                for item in items:
-                    variant = variant_map.get(item.variant_id)
-                    if variant:
-                        variant.stock += item.quantity
-
-            # 2. Hoàn lại lượt dùng coupon (nếu có) — lock với with_for_update()
-            if order.coupon_id:
-                coupon = db.query(Coupon).filter(Coupon.id == order.coupon_id).with_for_update().first()
-                if coupon:
-                    coupon.quantity += 1
-                # Xóa coupon usage record
-                db.query(CouponUsage).filter(
-                    CouponUsage.coupon_id == order.coupon_id,
-                    CouponUsage.order_id == order.id,
-                ).delete()
-
-            # 3. Hủy trạng thái commission liên quan
-            commission = db.query(AffiliateCommission).filter(AffiliateCommission.order_id == order.id).first()
-            if commission:
-                commission.status = "cancelled"
-
-            db.commit()
-            logger.info("Thanh toán VNPay thất bại: order_id=%s, response_code=%s", order.id, vnp_ResponseCode)
-
-            # Invalidate cache sản phẩm vì tồn kho hoàn lại
-            home_products_cache.invalidate()
-            product_cards_cache.invalidate()
-
-            return {"message": "Thanh toán thất bại", "order_id": order.id, "payment_status": order.payment_status}
-
-    except Exception as e:
-        db.rollback()
-        raise e
+@router.get("/vnpay-ipn")
+def vnpay_ipn(request: Request, db: Session = Depends(get_db)) -> dict[str, str]:
+    """Server-to-server VNPay notification. This is the payment source of truth."""
+    if not VNPAY_ENABLED:
+        return {"RspCode": "99", "Message": "Payment disabled"}
+    return process_vnpay_ipn(db, dict(request.query_params))

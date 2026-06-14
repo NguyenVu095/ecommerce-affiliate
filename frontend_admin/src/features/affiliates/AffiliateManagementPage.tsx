@@ -313,7 +313,7 @@ export default function AffiliateManagementPage() {
     else fetchConversions()
   }
 
-  const handleCommissionStatus = async (commission: CommissionRow, nextStatus: CommissionStatus) => {
+  const handleCommissionStatus = async (commission: CommissionRow, nextStatus: BatchCommissionStatus) => {
     setUpdatingId(commission.id)
     try {
       await updateAdminAffiliateCommissionStatusApi(commission.id, nextStatus)
@@ -335,7 +335,10 @@ export default function AffiliateManagementPage() {
     })
   }
 
-  const allCommissionIds = useMemo(() => commissions.map(c => c.id), [commissions])
+  const allCommissionIds = useMemo(
+    () => commissions.filter(c => c.status !== 'paid').map(c => c.id),
+    [commissions],
+  )
   const { allCommissionsSelected, someCommissionsSelected } = useMemo(() => {
     // Một vòng quét O(N) tính trạng thái chọn hàng loạt thay cho some/every lặp lại.
     const selectedCount = allCommissionIds.reduce(
@@ -625,14 +628,6 @@ export default function AffiliateManagementPage() {
                 </button>
                 <button
                   className="btn btn-ghost"
-                  style={{ fontSize: 13, padding: '5px 12px', background: '#dbeafe', color: '#1d4ed8', border: 'none' }}
-                  onClick={() => handleBatchCommission('paid')}
-                  disabled={batchProcessing}
-                >
-                  <DollarSign size={13} /> Đánh dấu đã TT
-                </button>
-                <button
-                  className="btn btn-ghost"
                   style={{ fontSize: 13, padding: '5px 12px', background: '#fee2e2', color: '#b91c1c', border: 'none' }}
                   onClick={() => handleBatchCommission('cancelled')}
                   disabled={batchProcessing}
@@ -791,8 +786,14 @@ export default function AffiliateManagementPage() {
                         <tr key={commission.id} style={{ background: selectedCommissionIds.has(commission.id) ? '#fefce8' : undefined }}>
                           <td style={{ textAlign: 'center' }}>
                             <button
+                              disabled={commission.status === 'paid'}
                               onClick={() => handleToggleCommission(commission.id)}
-                              style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                              style={{
+                                background: 'none', border: 'none',
+                                cursor: commission.status === 'paid' ? 'not-allowed' : 'pointer',
+                                opacity: commission.status === 'paid' ? 0.4 : 1,
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              }}
                             >
                               {selectedCommissionIds.has(commission.id)
                                 ? <CheckSquare size={16} color="#f59e0b" />
@@ -856,23 +857,7 @@ export default function AffiliateManagementPage() {
                                   <CheckCircle size={14} />
                                 </button>
                               )}
-                              {commission.status !== 'paid' && commission.status !== 'cancelled' && (
-                                <button
-                                  title="Đánh dấu đã thanh toán"
-                                  disabled={disabled}
-                                  onClick={() => handleCommissionStatus(commission, 'paid')}
-                                  style={{
-                                    width: 32, height: 32, borderRadius: 7, border: 'none',
-                                    cursor: disabled ? 'not-allowed' : 'pointer',
-                                    background: '#dbeafe', color: '#1d4ed8',
-                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                    opacity: disabled ? 0.6 : 1,
-                                  }}
-                                >
-                                  <DollarSign size={14} />
-                                </button>
-                              )}
-                              {commission.status !== 'cancelled' && (
+                              {commission.status !== 'cancelled' && commission.status !== 'paid' && (
                                 <button
                                   title="Hủy hoa hồng"
                                   disabled={disabled}

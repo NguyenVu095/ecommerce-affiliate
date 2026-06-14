@@ -1,10 +1,9 @@
-import { Suspense, lazy } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Navbar from "./components/Navbar";
 import Footer from "./components/Footer";
-import ChatWidget from "./components/chat/ChatWidget";
 
-
+const ChatWidget = lazy(() => import("./components/chat/ChatWidget"));
 const ProductList = lazy(() => import("./features/product/ProductList"));
 const ProductDetail = lazy(() => import("./features/product/ProductDetail"));
 const CategoryPage = lazy(() => import("./features/product/CategoryPage"));
@@ -33,6 +32,22 @@ function RouteFallback() {
     <div className="flex min-h-[50vh] items-center justify-center text-sm font-medium text-slate-500">
       Đang tải...
     </div>
+  );
+}
+
+function DeferredChatWidget() {
+  const [shouldRender, setShouldRender] = useState(false);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setShouldRender(true), 1500);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  if (!shouldRender) return null;
+  return (
+    <Suspense fallback={null}>
+      <ChatWidget />
+    </Suspense>
   );
 }
 
@@ -69,7 +84,7 @@ function App() {
         </main>
 
         <Footer />
-        <ChatWidget />
+        <DeferredChatWidget />
       </div>
 
     </BrowserRouter>

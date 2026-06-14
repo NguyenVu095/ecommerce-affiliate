@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime, DECIMAL, Enum, Index, SmallInteger
+from sqlalchemy import Boolean, Column, Integer, String, Text, ForeignKey, DateTime, DECIMAL, Enum, Index, JSON, SmallInteger
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.db.database import Base
@@ -40,7 +40,7 @@ class Order(Base):
     receiver_email = Column(String(255), nullable=True)
 
     status = Column(Enum('pending', 'confirmed', 'shipping', 'success', 'cancelled', name='order_status_enum'), index=True, default="pending")
-    payment_status = Column(Enum('unpaid', 'paid', name='payment_status_enum'), index=True, default="unpaid")
+    payment_status = Column(Enum('unpaid', 'paid', 'refunded', name='payment_status_enum'), index=True, default="unpaid")
     
     total_base_price = Column(DECIMAL(15, 2), nullable=False)
     shipping_fee = Column(DECIMAL(15, 2), nullable=False)
@@ -62,6 +62,8 @@ class Order(Base):
     # Relationships
     items = relationship("OrderItem", back_populates="order", cascade="all, delete-orphan")
     status_history = relationship("OrderStatusHistory", back_populates="order", cascade="all, delete-orphan")
+    payment_transactions = relationship("PaymentTransaction", back_populates="order", cascade="all, delete-orphan")
+    payment_method = relationship("PaymentMethod", lazy="joined")
 
     __table_args__ = (
         Index('ix_orders_user_created', 'user_id', 'created_at'),
@@ -103,4 +105,89 @@ class OrderStatusHistory(Base):
 
     __table_args__ = (
         Index('ix_order_status_history_order_created', 'order_id', 'created_at'),
+    )
+
+
+class PaymentTransaction(Base):
+    __tablename__ = "payment_transactions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True, index=True)
+    order_id = Column(Integer, ForeignKey("orders.id"), index=True, nullable=False)
+    provider = Column(String(32), index=True, nullable=False, default="VNPAY")
+    txn_ref = Column(String(100), unique=True, index=True, nullable=False)
+    amount = Column(DECIMAL(15, 2), nullable=False)
+    currency = Column(String(3), nullable=False, default="VND")
+    status = Column(String(32), index=True, nullable=False, default="pending")
+    payment_create_date = Column(String(14), nullable=False)
+    payment_expire_date = Column(String(14), nullable=False)
+    client_ip = Column(String(45), nullable=False)
+    gateway_transaction_no = Column(String(32), unique=True, index=True, nullable=True)
+    response_code = Column(String(10), nullable=True)
+    transaction_status = Column(String(10), nullable=True)
+    bank_code = Column(String(32), nullable=True)
+    card_type = Column(String(32), nullable=True)
+    pay_date = Column(DateTime, nullable=True)
+    raw_response = Column(JSON, nullable=True)
+    confirmed_at = Column(DateTime, nullable=True)
+    last_reconciled_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, index=True, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    order = relationship("Order", back_populates="payment_transactions")
+    refunds = relationship("PaymentRefund", back_populates="transaction", cascade="all, delete-orphan")
+    events = relationship("PaymentGatewayEvent", back_populates="transaction", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        Index("ix_payment_transactions_order_status", "order_id", "status"),
+        Index("ix_payment_transactions_provider_created", "provider", "created_at"),
+    )
+
+
+class PaymentRefund(Base):
+    __tablename__ = "payment_refunds"
+
+    id = Column(Integer, primary_key=True, autoincrement=True, index=True)
+    payment_transaction_id = Column(Integer, ForeignKey("payment_transactions.id"), index=True, nullable=False)
+    order_id = Column(Integer, ForeignKey("orders.id"), index=True, nullable=False)
+    request_id = Column(String(100), unique=True, index=True, nullable=False)
+    amount = Column(DECIMAL(15, 2), nullable=False)
+    status = Column(String(32), index=True, nullable=False, default="pending")
+    reason = Column(Text, nullable=False)
+    requested_by = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    gateway_response_id = Column(String(100), nullable=True)
+    gateway_transaction_no = Column(String(32), index=True, nullable=True)
+    response_code = Column(String(10), nullable=True)
+    transaction_status = Column(String(10), nullable=True)
+    raw_response = Column(JSON, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, index=True, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    transaction = relationship("PaymentTransaction", back_populates="refunds")
+    events = relationship("PaymentGatewayEvent", back_populates="refund", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        Index("ix_payment_refunds_order_status", "order_id", "status"),
+    )
+
+
+class PaymentGatewayEvent(Base):
+    __tablename__ = "payment_gateway_events"
+
+    id = Column(Integer, primary_key=True, autoincrement=True, index=True)
+    order_id = Column(Integer, ForeignKey("orders.id"), index=True, nullable=False)
+    payment_transaction_id = Column(Integer, ForeignKey("payment_transactions.id"), index=True, nullable=True)
+    payment_refund_id = Column(Integer, ForeignKey("payment_refunds.id"), index=True, nullable=True)
+    event_type = Column(String(32), index=True, nullable=False)
+    request_id = Column(String(100), index=True, nullable=True)
+    signature_valid = Column(Boolean, nullable=True)
+    response_code = Column(String(10), nullable=True)
+    payload = Column(JSON, nullable=True)
+    created_at = Column(DateTime, index=True, server_default=func.now())
+
+    transaction = relationship("PaymentTransaction", back_populates="events")
+    refund = relationship("PaymentRefund", back_populates="events")
+
+    __table_args__ = (
+        Index("ix_payment_gateway_events_order_created", "order_id", "created_at"),
     )

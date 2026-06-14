@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import GoogleSignInButton from "../../components/GoogleSignInButton";
 import { getErrorMessage } from "../../services/api";
-import { loginApi } from "../../services/authService";
+import { googleLoginApi, loginApi } from "../../services/authService";
 import { useAuthStore } from "../../store/authStore";
 
 export default function LoginPage() {
@@ -14,6 +15,7 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const redirectUrl = searchParams.get("redirect") || "/";
+  const googleLoginEnabled = Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID?.trim());
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,6 +30,21 @@ export default function LoginPage() {
     } catch (err: unknown) {
       // Dùng unknown thay vì any để đảm bảo strict type safety
       setError(getErrorMessage(err, "Đăng nhập thất bại. Vui lòng kiểm tra lại thông tin."));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGoogleCredential = async (credential: string) => {
+    setLoading(true);
+    setError("");
+
+    try {
+      const { token, user } = await googleLoginApi(credential);
+      login(token, user);
+      navigate(redirectUrl);
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Đăng nhập Google thất bại. Vui lòng thử lại."));
     } finally {
       setLoading(false);
     }
@@ -76,6 +93,24 @@ export default function LoginPage() {
           {loading ? "Đang xử lý..." : "Đăng Nhập"}
         </button>
       </form>
+
+      {googleLoginEnabled && (
+        <>
+          <div className="my-6 flex items-center gap-3 text-xs font-medium uppercase tracking-wide text-slate-400">
+            <span className="h-px flex-1 bg-slate-200" />
+            hoặc
+            <span className="h-px flex-1 bg-slate-200" />
+          </div>
+
+          <div className="flex justify-center">
+            <GoogleSignInButton
+              disabled={loading}
+              onCredential={handleGoogleCredential}
+              onError={setError}
+            />
+          </div>
+        </>
+      )}
 
       <p className="text-center mt-6 text-slate-500 text-sm">
         Chưa có tài khoản?{" "}

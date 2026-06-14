@@ -1,6 +1,6 @@
 import { memo, useEffect, useMemo } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
-import { ShoppingBag, BarChart2, Tag, Users, LogOut, Package, Users2, FolderTree, Truck, Menu, X } from 'lucide-react'
+import { ShoppingBag, BarChart2, Tag, Users, LogOut, Package, Users2, FolderTree, Truck, Menu, WalletCards, X } from 'lucide-react'
 import { useAuthStore } from '../store/authStore'
 
 /** Kiểu dữ liệu cho mỗi mục điều hướng trong sidebar. */
@@ -17,6 +17,7 @@ const NAV: NavItem[] = [
   { to: '/categories', icon: FolderTree,  label: 'Danh mục' },
   { to: '/coupons',    icon: Tag,         label: 'Mã giảm giá' },
   { to: '/affiliates', icon: Users,       label: 'Affiliate' },
+  { to: '/withdrawals', icon: WalletCards, label: 'Rút tiền' },
   { to: '/shipping',   icon: Truck,       label: 'Vận chuyển' },
   { to: '/users',      icon: Users2,      label: 'Khách hàng' },
 ]

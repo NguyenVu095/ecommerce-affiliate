@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { getErrorMessage } from "../../services/api";
-import { lookupOrder, type Order as LookupOrder } from "../../services/orderService";
-import { Link } from "react-router-dom";
+import { getVnpayUrl, lookupOrder, type Order as LookupOrder } from "../../services/orderService";
+import { Link, useSearchParams } from "react-router-dom";
 import { ChevronRight, CreditCard, MapPin, Package, Search, Truck } from "lucide-react";
 
 
@@ -31,25 +31,34 @@ function getAttributeLabel(attrs: Record<string, string> | null) {
 }
 
 export default function OrderLookupPage() {
-  const [orderCode, setOrderCode] = useState("");
-  const [contact, setContact] = useState("");
+  const [searchParams] = useSearchParams();
+  const paramOrderCode = searchParams.get("order_code") || "";
+  const paramContact = searchParams.get("contact") || "";
+  const paymentResult = searchParams.get("payment_result");
+
+  const [orderCode, setOrderCode] = useState(paramOrderCode);
+  const [contact, setContact] = useState(paramContact);
   const [order, setOrder] = useState<LookupOrder | null>(null);
   const [loading, setLoading] = useState(false);
+  const [retryingPayment, setRetryingPayment] = useState(false);
   const [error, setError] = useState("");
 
-  const handleSubmit = async (event: React.FormEvent) => {
-    event.preventDefault();
+  const handleSubmit = async (event?: React.FormEvent) => {
+    if (event) event.preventDefault();
     setError("");
     setOrder(null);
 
-    if (!orderCode.trim() || !contact.trim()) {
+    const currentOrderCode = orderCode.trim();
+    const currentContact = contact.trim();
+
+    if (!currentOrderCode || !currentContact) {
       setError("Vui lòng nhập mã đơn hàng và số điện thoại/email.");
       return;
     }
 
     setLoading(true);
     try {
-      const data = await lookupOrder(orderCode.trim(), contact.trim());
+      const data = await lookupOrder(currentOrderCode, currentContact);
       setOrder(data);
     } catch (err: unknown) {
       setError(getErrorMessage(err, "Không tìm thấy đơn hàng phù hợp."));
@@ -57,6 +66,38 @@ export default function OrderLookupPage() {
       setLoading(false);
     }
   };
+
+  const handleRetryPayment = async () => {
+    if (!order) return;
+    setRetryingPayment(true);
+    setError("");
+    try {
+      window.location.href = await getVnpayUrl(order.id, order.order_code, contact.trim());
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Không thể tạo lại giao dịch VNPay."));
+      setRetryingPayment(false);
+    }
+  };
+
+  // Tự động tìm kiếm nếu có tham số truyền vào từ URL (ví dụ chuyển hướng sau khi thanh toán VNPay)
+  useEffect(() => {
+    if (paramOrderCode && paramContact) {
+      const autoLookup = async () => {
+        setLoading(true);
+        setError("");
+        try {
+          const data = await lookupOrder(paramOrderCode, paramContact);
+          setOrder(data);
+        } catch (err: unknown) {
+          setError(getErrorMessage(err, "Không tìm thấy đơn hàng phù hợp."));
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      autoLookup();
+    }
+  }, [paramOrderCode, paramContact]);
 
   return (
     <div className="min-h-screen bg-slate-50 pb-20 pt-8">
@@ -82,6 +123,16 @@ export default function OrderLookupPage() {
                 </p>
               </div>
             </div>
+
+            {paymentResult && (
+              <div className={`mb-4 rounded-xl p-3 text-sm font-medium ${
+                paymentResult === "accepted" ? "bg-blue-50 text-blue-700" : "bg-amber-50 text-amber-700"
+              }`}>
+                {paymentResult === "accepted"
+                  ? "VNPay đã tiếp nhận giao dịch. Trạng thái thanh toán sẽ được xác nhận qua IPN; vui lòng tra cứu lại đơn hàng."
+                  : "Giao dịch VNPay chưa thành công. Đơn hàng vẫn có thể được thanh toán lại."}
+              </div>
+            )}
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
@@ -113,6 +164,19 @@ export default function OrderLookupPage() {
                 <div className="rounded-xl bg-red-50 p-3 text-sm font-medium text-red-600">
                   {error}
                 </div>
+              )}
+
+              {order?.payment_method_code === "VNPAY"
+                && order.payment_status === "unpaid"
+                && ["pending", "confirmed"].includes(order.status) && (
+                <button
+                  type="button"
+                  disabled={retryingPayment}
+                  onClick={handleRetryPayment}
+                  className="w-full rounded-xl bg-blue-600 py-3 font-bold text-white shadow-md transition-colors hover:bg-blue-700 disabled:opacity-60"
+                >
+                  {retryingPayment ? "Đang mở VNPay..." : "Thanh toán lại bằng VNPay"}
+                </button>
               )}
 
               <button
@@ -204,7 +268,7 @@ export default function OrderLookupPage() {
                     </p>
                     <p className="flex items-center gap-1.5">
                       <CreditCard className="h-3.5 w-3.5" />
-                      Thanh toán: {order.payment_status === "paid" ? "Đã thanh toán" : "Chưa thanh toán"}
+                      Thanh toán: {order.payment_status === "paid" ? "Đã thanh toán" : order.payment_status === "refunded" ? "Đã hoàn tiền" : "Chưa thanh toán"}
                     </p>
                   </div>
                 </div>

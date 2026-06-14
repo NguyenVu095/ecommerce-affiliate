@@ -22,6 +22,7 @@ import {
 import { useAuthStore } from "../../store/authStore";
 import {
   getMyOrders,
+  getVnpayUrl,
   cancelOrder,
   type Order,
   type OrderItem,
@@ -162,6 +163,7 @@ function OrderCard({
   const { token } = useAuthStore();
   const [expanded, setExpanded] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [retryingPayment, setRetryingPayment] = useState(false);
   const [reviewingItemId, setReviewingItemId] = useState<number | null>(null);
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewComment, setReviewComment] = useState("");
@@ -205,6 +207,16 @@ function OrderCard({
       alert(getErrorMessage(err, "Hủy đơn thất bại. Vui lòng thử lại."));
     } finally {
       setCancelling(false);
+    }
+  };
+
+  const handleRetryPayment = async () => {
+    setRetryingPayment(true);
+    try {
+      window.location.href = await getVnpayUrl(order.id, order.order_code, "");
+    } catch (err: unknown) {
+      alert(getErrorMessage(err, "Không thể tạo lại giao dịch VNPay."));
+      setRetryingPayment(false);
     }
   };
 
@@ -318,9 +330,9 @@ function OrderCard({
             <p className="text-base font-black text-slate-900">{formatVND(order.total_final)}</p>
           </div>
           <span className={`rounded-md px-2 py-1 text-[10px] font-bold uppercase ${
-            order.payment_status === "paid" ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"
+            order.payment_status === "paid" ? "bg-emerald-100 text-emerald-700" : order.payment_status === "refunded" ? "bg-indigo-100 text-indigo-700" : "bg-slate-100 text-slate-500"
           }`}>
-            {order.payment_status === "paid" ? "Đã thanh toán" : "Chưa TT"}
+            {order.payment_status === "paid" ? "Đã thanh toán" : order.payment_status === "refunded" ? "Đã hoàn tiền" : "Chưa TT"}
           </span>
         </div>
       </div>
@@ -488,8 +500,8 @@ function OrderCard({
                   <span className="flex items-center gap-1 text-xs text-slate-500">
                     <CreditCard className="h-3 w-3" /> Thanh toán:
                   </span>
-                  <span className={`text-xs font-bold ${order.payment_status === "paid" ? "text-emerald-600" : "text-amber-600"}`}>
-                    {order.payment_status === "paid" ? "Đã thanh toán" : "Chưa thanh toán"}
+                  <span className={`text-xs font-bold ${order.payment_status === "paid" ? "text-emerald-600" : order.payment_status === "refunded" ? "text-indigo-600" : "text-amber-600"}`}>
+                    {order.payment_status === "paid" ? "Đã thanh toán" : order.payment_status === "refunded" ? "Đã hoàn tiền" : "Chưa thanh toán"}
                   </span>
                 </div>
               </div>
@@ -587,6 +599,19 @@ function OrderCard({
         </div>
       )}
       <div className={`flex items-center border-t ${expanded ? "border-slate-100" : "border-slate-50"}`}>
+        {order.payment_method_code === "VNPAY"
+          && order.payment_status === "unpaid"
+          && CANCELLABLE_STATUSES.includes(order.status) && (
+          <button
+            type="button"
+            onClick={handleRetryPayment}
+            disabled={retryingPayment}
+            className="flex shrink-0 items-center gap-1.5 border-r border-slate-100 px-4 py-2.5 text-xs font-bold text-blue-600 transition-colors hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <CreditCard className="h-3.5 w-3.5" />
+            {retryingPayment ? "Đang mở VNPay..." : "Thanh toán lại"}
+          </button>
+        )}
         {CANCELLABLE_STATUSES.includes(order.status) && (
           <button
             type="button"

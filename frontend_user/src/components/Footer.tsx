@@ -72,11 +72,7 @@ export default function Footer() {
             />
             <div className="mt-8">
               <h4 className="text-white font-semibold text-xs uppercase tracking-widest mb-4">Phương Thức Thanh Toán</h4>
-              <div className="flex gap-3 grayscale opacity-50">
-                <img src="https://upload.wikimedia.org/wikipedia/commons/d/d0/VNPAY_Logo.png" alt="VNPAY" className="h-4 object-contain" />
-                <img src="https://upload.wikimedia.org/wikipedia/vi/f/fe/MoMo_Logo.png" alt="Momo" className="h-5 object-contain" />
-                <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/5/5e/Visa_Inc._logo.svg/2560px-Visa_Inc._logo.svg.png" alt="Visa" className="h-4 object-contain" />
-              </div>
+              <p className="text-sm text-slate-400">Thanh toán khi nhận hàng (COD).</p>
             </div>
           </div>
 

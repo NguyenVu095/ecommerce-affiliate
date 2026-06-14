@@ -1170,14 +1170,8 @@ def get_affiliate_dashboard(
         round((previous_success_orders / previous_clicks) * 100, 2) if previous_clicks else 0.0
     )
 
-    available_balance = _sum_or_zero(
-        db.query(func.sum(AffiliateCommission.amount))
-        .filter(
-            AffiliateCommission.user_id == current_user.id,
-            AffiliateCommission.status == "approved",
-        )
-        .scalar()
-    )
+    approved_balance = _get_approved_balance(db, current_user.id)
+    available_balance = max(0.0, approved_balance - _get_reserved_withdrawal_amount(db, current_user.id))
     pending_balance = _sum_or_zero(
         db.query(func.sum(AffiliateCommission.amount))
         .filter(
@@ -1186,7 +1180,7 @@ def get_affiliate_dashboard(
         )
         .scalar()
     )
-    paid_total = _sum_or_zero(
+    legacy_paid_total = _sum_or_zero(
         db.query(func.sum(AffiliateCommission.amount))
         .filter(
             AffiliateCommission.user_id == current_user.id,
@@ -1194,6 +1188,7 @@ def get_affiliate_dashboard(
         )
         .scalar()
     )
+    paid_total = legacy_paid_total + _get_paid_withdrawal_amount(db, current_user.id)
 
     chart: list[ChartPoint] = []
     chart_start = _day_start(today - timedelta(days=11))
@@ -1451,7 +1446,24 @@ def _get_pending_withdrawal_amount(db: Session, user_id: int) -> float:
     """Tổng tiền của các yêu cầu rút đang chờ duyệt."""
     return _sum_or_zero(
         db.query(func.sum(WithdrawalRequest.amount))
-        .filter(WithdrawalRequest.user_id == user_id, WithdrawalRequest.status == "pending")
+        .filter(WithdrawalRequest.user_id == user_id, WithdrawalRequest.status.in_(["pending", "approved"]))
+        .scalar()
+    )
+
+
+def _get_reserved_withdrawal_amount(db: Session, user_id: int) -> float:
+    """Total requested or paid amount, excluding rejected requests."""
+    return _sum_or_zero(
+        db.query(func.sum(WithdrawalRequest.amount))
+        .filter(WithdrawalRequest.user_id == user_id, WithdrawalRequest.status != "rejected")
+        .scalar()
+    )
+
+
+def _get_paid_withdrawal_amount(db: Session, user_id: int) -> float:
+    return _sum_or_zero(
+        db.query(func.sum(WithdrawalRequest.amount))
+        .filter(WithdrawalRequest.user_id == user_id, WithdrawalRequest.status == "paid")
         .scalar()
     )
 
@@ -1484,8 +1496,8 @@ def create_withdrawal_request(
         )
 
     approved_balance = _get_approved_balance(db, current_user.id)
-    pending_withdrawal = _get_pending_withdrawal_amount(db, current_user.id)
-    net_available = approved_balance - pending_withdrawal
+    reserved_withdrawal = _get_reserved_withdrawal_amount(db, current_user.id)
+    net_available = approved_balance - reserved_withdrawal
 
     if body.amount > net_available:
         raise HTTPException(
@@ -1548,13 +1560,14 @@ def get_withdrawal_requests(
         .filter(AffiliateCommission.user_id == current_user.id, AffiliateCommission.status == "pending")
         .scalar()
     )
-    paid_total = _sum_or_zero(
+    legacy_paid_total = _sum_or_zero(
         db.query(func.sum(AffiliateCommission.amount))
         .filter(AffiliateCommission.user_id == current_user.id, AffiliateCommission.status == "paid")
         .scalar()
     )
     pending_withdrawal = _get_pending_withdrawal_amount(db, current_user.id)
-    net_available = max(0.0, approved_balance - pending_withdrawal)
+    paid_total = legacy_paid_total + _get_paid_withdrawal_amount(db, current_user.id)
+    net_available = max(0.0, approved_balance - _get_reserved_withdrawal_amount(db, current_user.id))
 
     withdrawals = (
         db.query(WithdrawalRequest)

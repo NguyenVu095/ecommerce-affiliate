@@ -1,5 +1,5 @@
 import logging
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session, aliased, joinedload, selectinload
 from sqlalchemy import func, cast, Date, or_
 from typing import List, Optional
@@ -7,11 +7,25 @@ from datetime import datetime, date, timedelta
 
 from app.db.database import get_db
 from app.core.deps import get_current_admin
+from app.core.rate_limit import get_trusted_client_ip
 from app.core.cache import category_cache, category_descendants_cache, home_products_cache, product_cards_cache
 from app.core.validation import clean_required_text, clean_text, normalize_public_code, normalize_url
 from app.modules.user.models import User
-from app.modules.order.models import Order, OrderItem, OrderStatusHistory
-from app.modules.affiliate.models import AffiliateClick, AffiliateCommission, AffiliateConversion, AffiliateLink
+from app.modules.order.models import Order, OrderItem, OrderStatusHistory, PaymentMethod, PaymentTransaction
+from app.modules.order.payment_service import (
+    VNPAY_ENABLED,
+    initiate_full_refund,
+    reconcile_vnpay_transaction,
+    serialize_payment_transaction,
+)
+from app.modules.affiliate.models import (
+    AffiliateClick,
+    AffiliateCommission,
+    AffiliateConversion,
+    AffiliateLink,
+    WithdrawalRequest,
+)
+from app.modules.affiliate.routes import _dashboard_cache_invalidate
 from app.modules.product.variant_models import ProductVariant
 from app.modules.product.models import Product
 from app.modules.category.models import Category
@@ -68,6 +82,10 @@ class OrderStatusUpdate(BaseModel):
     status: str
     note: Optional[str] = None
 
+
+class FullRefundRequest(BaseModel):
+    reason: str = Field(min_length=5, max_length=255)
+
 class StatsResponse(BaseModel):
     total_orders: int
     orders_today: int
@@ -79,10 +97,140 @@ class StatsResponse(BaseModel):
     revenue_total: float
 
 class AffiliateCommissionStatusUpdate(BaseModel):
-    status: Literal["pending", "approved", "paid", "cancelled"]
+    status: Literal["approved", "cancelled"]
     note: Optional[str] = None
 
+
+class WithdrawalStatusUpdate(BaseModel):
+    status: Literal["approved", "rejected", "paid"]
+    admin_note: Optional[str] = Field(default=None, max_length=1000)
+
 AFFILIATE_STATUSES = ("pending", "approved", "paid", "cancelled")
+COMMISSION_TRANSITIONS = {
+    "pending": {"approved", "cancelled"},
+    "approved": {"cancelled"},
+    "cancelled": {"approved"},
+    "paid": set(),
+}
+WITHDRAWAL_STATUSES = ("pending", "approved", "rejected", "paid")
+WITHDRAWAL_TRANSITIONS = {
+    "pending": {"approved", "rejected"},
+    "approved": {"paid", "rejected"},
+    "rejected": set(),
+    "paid": set(),
+}
+
+
+def validate_admin_order_transition(current_status: str, next_status: str) -> None:
+    allowed_transitions = {
+        "pending": {"confirmed", "cancelled"},
+        "confirmed": {"cancelled"},
+        "shipping": set(),
+        "success": set(),
+        "cancelled": set(),
+    }
+    if next_status not in allowed_transitions.get(current_status, set()):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Không thể chuyển trạng thái đơn hàng từ '{current_status}' sang '{next_status}' tại trang quản trị.",
+        )
+
+
+def validate_withdrawal_transition(current_status: str, next_status: str) -> None:
+    if next_status not in WITHDRAWAL_TRANSITIONS.get(current_status, set()):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid withdrawal transition: {current_status} -> {next_status}",
+        )
+
+
+def validate_commission_transition(current_status: str, next_status: str) -> None:
+    if current_status == next_status:
+        return
+    if next_status not in COMMISSION_TRANSITIONS.get(current_status, set()):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid commission transition: {current_status} -> {next_status}",
+        )
+
+
+def _lock_affiliate_users(db: Session, user_ids: set[int]) -> None:
+    if user_ids:
+        (
+            db.query(User.id)
+            .filter(User.id.in_(sorted(user_ids)))
+            .order_by(User.id)
+            .with_for_update()
+            .all()
+        )
+
+
+def _validate_commission_status_change(
+    db: Session,
+    commissions: list[AffiliateCommission],
+    next_status: str,
+) -> None:
+    changing = [commission for commission in commissions if commission.status != next_status]
+    for commission in changing:
+        validate_commission_transition(commission.status, next_status)
+
+    if next_status == "approved":
+        order_ids = {commission.order_id for commission in changing}
+        success_order_ids = {
+            order_id
+            for (order_id,) in (
+                db.query(Order.id)
+                .filter(Order.id.in_(order_ids), Order.status == "success")
+                .all()
+            )
+        }
+        if order_ids - success_order_ids:
+            raise HTTPException(status_code=409, detail="Only successful orders can have approved commission")
+
+    if next_status == "cancelled":
+        removed_by_user: dict[int, float] = {}
+        for commission in changing:
+            if commission.status == "approved":
+                removed_by_user[commission.user_id] = (
+                    removed_by_user.get(commission.user_id, 0.0) + float(commission.amount)
+                )
+        if not removed_by_user:
+            return
+
+        user_ids = set(removed_by_user)
+        approved_by_user = {
+            user_id: float(amount or 0)
+            for user_id, amount in (
+                db.query(AffiliateCommission.user_id, func.sum(AffiliateCommission.amount))
+                .filter(
+                    AffiliateCommission.user_id.in_(user_ids),
+                    AffiliateCommission.status == "approved",
+                )
+                .group_by(AffiliateCommission.user_id)
+                .all()
+            )
+        }
+        reserved_by_user = {
+            user_id: float(amount or 0)
+            for user_id, amount in (
+                db.query(WithdrawalRequest.user_id, func.sum(WithdrawalRequest.amount))
+                .filter(
+                    WithdrawalRequest.user_id.in_(user_ids),
+                    WithdrawalRequest.status != "rejected",
+                )
+                .group_by(WithdrawalRequest.user_id)
+                .all()
+            )
+        }
+        if any(
+            approved_by_user.get(user_id, 0.0) - removed_amount
+            < reserved_by_user.get(user_id, 0.0)
+            for user_id, removed_amount in removed_by_user.items()
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="Cannot cancel commission reserved by a withdrawal request",
+            )
 
 
 def _clean_product_data(data: dict) -> dict:
@@ -255,7 +403,12 @@ def admin_get_affiliate_stats(
         if status in commission_by_status:
             commission_by_status[status] = _float_or_zero(amount)
 
-    payable_commission = commission_by_status["approved"]
+    reserved_withdrawals = _float_or_zero(
+        db.query(func.sum(WithdrawalRequest.amount))
+        .filter(WithdrawalRequest.status != "rejected")
+        .scalar()
+    )
+    payable_commission = max(0.0, commission_by_status["approved"] - reserved_withdrawals)
     total_commission = (
         commission_by_status["pending"]
         + commission_by_status["approved"]
@@ -523,6 +676,107 @@ def admin_get_affiliate_commissions(
     }
 
 
+@router.get("/affiliate-withdrawals", response_model=dict)
+def admin_get_affiliate_withdrawals(
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(get_current_admin),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    status: Optional[str] = Query(None),
+    search: Optional[str] = Query(None),
+):
+    if status and status not in WITHDRAWAL_STATUSES:
+        raise HTTPException(status_code=400, detail="Invalid withdrawal status")
+
+    query = (
+        db.query(WithdrawalRequest, User)
+        .join(User, User.id == WithdrawalRequest.user_id)
+    )
+    if status:
+        query = query.filter(WithdrawalRequest.status == status)
+    if search:
+        keyword = f"%{search.strip()}%"
+        query = query.filter(
+            or_(
+                User.full_name.ilike(keyword),
+                User.email.ilike(keyword),
+                User.referral_code.ilike(keyword),
+                WithdrawalRequest.bank_account.ilike(keyword),
+                WithdrawalRequest.bank_owner.ilike(keyword),
+            )
+        )
+
+    total = query.count()
+    rows = (
+        query.order_by(WithdrawalRequest.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    return {
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": max(1, (total + page_size - 1) // page_size),
+        "data": [
+            {
+                "id": withdrawal.id,
+                "user_id": user.id,
+                "user_name": user.full_name,
+                "user_email": user.email,
+                "referral_code": user.referral_code or f"AFF{user.id}",
+                "amount": _float_or_zero(withdrawal.amount),
+                "status": withdrawal.status,
+                "bank_name": withdrawal.bank_name,
+                "bank_account": withdrawal.bank_account,
+                "bank_owner": withdrawal.bank_owner,
+                "note": withdrawal.note,
+                "admin_note": withdrawal.admin_note,
+                "created_at": withdrawal.created_at.isoformat() if withdrawal.created_at else None,
+                "processed_at": withdrawal.processed_at.isoformat() if withdrawal.processed_at else None,
+            }
+            for withdrawal, user in rows
+        ],
+    }
+
+
+@router.patch("/affiliate-withdrawals/{withdrawal_id}/status", response_model=dict)
+def admin_update_affiliate_withdrawal_status(
+    withdrawal_id: int,
+    body: WithdrawalStatusUpdate,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(get_current_admin),
+):
+    withdrawal = (
+        db.query(WithdrawalRequest)
+        .filter(WithdrawalRequest.id == withdrawal_id)
+        .with_for_update()
+        .first()
+    )
+    if not withdrawal:
+        raise HTTPException(status_code=404, detail="Withdrawal request not found")
+
+    validate_withdrawal_transition(withdrawal.status, body.status)
+    withdrawal.status = body.status
+    withdrawal.admin_note = clean_text(body.admin_note, max_length=1000, field_name="admin_note")
+    withdrawal.processed_at = datetime.now()
+    db.commit()
+    _dashboard_cache_invalidate(withdrawal.user_id)
+    logger.info(
+        "Withdrawal status updated: withdrawal_id=%d user_id=%d status=%s admin_id=%d",
+        withdrawal.id,
+        withdrawal.user_id,
+        withdrawal.status,
+        current_admin.id,
+    )
+    return {
+        "message": "Withdrawal status updated",
+        "withdrawal_id": withdrawal.id,
+        "status": withdrawal.status,
+        "processed_at": withdrawal.processed_at.isoformat(),
+    }
+
+
 @router.get("/affiliate-conversions", response_model=dict)
 def admin_get_affiliate_conversions(
     db: Session = Depends(get_db),
@@ -656,33 +910,29 @@ def admin_update_affiliate_commission_status(
     db: Session = Depends(get_db),
     current_admin: User = Depends(get_current_admin),
 ):
-    """
-    Cập nhật trạng thái hoa hồng (pending/approved/paid/cancelled).
-    Tối ưu: loại bỏ db.refresh() dư thừa, build response từ object session-tracked trong memory.
-    Thay datetime.utcnow() đã deprecated bằng datetime.now().
-    """
-    commission = db.query(AffiliateCommission).filter(AffiliateCommission.id == commission_id).first()
-    if not commission:
+    preview = db.query(AffiliateCommission).filter(AffiliateCommission.id == commission_id).first()
+    if not preview:
         raise HTTPException(status_code=404, detail="Không tìm thấy hoa hồng")
+
+    _lock_affiliate_users(db, {preview.user_id})
+    commission = (
+        db.query(AffiliateCommission)
+        .filter(AffiliateCommission.id == commission_id)
+        .with_for_update()
+        .first()
+    )
+    _validate_commission_status_change(db, [commission], body.status)
 
     now = datetime.now()
     commission.status = body.status
     if body.status == "approved" and commission.approved_at is None:
         commission.approved_at = now
-    elif body.status == "paid":
-        if commission.approved_at is None:
-            commission.approved_at = now
-        commission.paid_at = now
-    elif body.status == "pending":
-        commission.approved_at = None
-        commission.paid_at = None
 
     if body.note is not None:
         commission.note = clean_text(body.note, max_length=1000, field_name="note")
 
     db.commit()
-    # Tối ưu: không gọi db.refresh() — các giá trị đã được gán trực tiếp vào object
-    # và session đang tracking đầy đủ trạng thái, không cần load lại từ DB.
+    _dashboard_cache_invalidate(commission.user_id)
     logger.info("Commission status updated: commission_id=%d, status=%s", commission_id, body.status)
     return {
         "message": "Cập nhật trạng thái hoa hồng thành công",
@@ -886,19 +1136,84 @@ def get_order_detail(
     )
 
 
+@router.get("/orders/{order_id}/payment-transactions", response_model=list[dict])
+def get_order_payment_transactions(
+    order_id: int,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(get_current_admin),
+):
+    if not db.query(Order.id).filter(Order.id == order_id).first():
+        raise HTTPException(status_code=404, detail="Không tìm thấy đơn hàng")
+    transactions = (
+        db.query(PaymentTransaction)
+        .filter(PaymentTransaction.order_id == order_id)
+        .order_by(PaymentTransaction.id.desc())
+        .all()
+    )
+    return [serialize_payment_transaction(transaction) for transaction in transactions]
+
+
+@router.post("/payment-transactions/{transaction_id}/reconcile", response_model=dict)
+def reconcile_payment_transaction(
+    transaction_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(get_current_admin),
+):
+    if not VNPAY_ENABLED:
+        raise HTTPException(status_code=503, detail="VNPAY payment is disabled.")
+    transaction = reconcile_vnpay_transaction(db, transaction_id, get_trusted_client_ip(request))
+    logger.info(
+        "VNPay transaction reconciled: transaction_id=%s admin_id=%s status=%s",
+        transaction.id,
+        current_admin.id,
+        transaction.status,
+    )
+    return serialize_payment_transaction(transaction)
+
+
+@router.post("/orders/{order_id}/refund", response_model=dict)
+def refund_order_payment(
+    order_id: int,
+    body: FullRefundRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(get_current_admin),
+):
+    if not VNPAY_ENABLED:
+        raise HTTPException(status_code=503, detail="VNPAY payment is disabled.")
+    refund = initiate_full_refund(
+        db,
+        order_id,
+        current_admin.id,
+        clean_required_text(body.reason, max_length=255, field_name="reason"),
+        get_trusted_client_ip(request),
+    )
+    logger.warning(
+        "VNPay full refund requested: refund_id=%s order_id=%s admin_id=%s status=%s",
+        refund.id,
+        order_id,
+        current_admin.id,
+        refund.status,
+    )
+    return {
+        "message": "VNPay refund processed.",
+        "refund_id": refund.id,
+        "order_id": order_id,
+        "status": refund.status,
+    }
+
+
 @router.patch("/orders/{order_id}/status")
 def update_order_status(
     order_id: int,
     body: OrderStatusUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     current_admin: User = Depends(get_current_admin),
 ):
-    VALID_STATUSES = ["pending", "confirmed", "shipping", "success", "cancelled"]
-    if body.status not in VALID_STATUSES:
-        raise HTTPException(status_code=400, detail=f"Trạng thái không hợp lệ. Chọn: {VALID_STATUSES}")
-
     # Khóa dòng đơn hàng để tránh race condition
-    order = db.query(Order).filter(Order.id == order_id).with_for_update().first()
+    order = db.query(Order).filter(Order.id == order_id).with_for_update(of=Order).first()
     if not order:
         raise HTTPException(status_code=404, detail="Không tìm thấy đơn hàng")
 
@@ -906,28 +1221,48 @@ def update_order_status(
     if old_status == body.status:
         return {"message": "Trạng thái không thay đổi", "order_id": order.id, "status": order.status}
 
-    # Chặn cập nhật trạng thái nếu đơn hàng đã thành công hoặc đã bị hủy
-    if old_status in ["success", "cancelled"]:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Không thể cập nhật đơn hàng đã ở trạng thái cuối '{old_status}'",
-        )
+    validate_admin_order_transition(old_status, body.status)
 
-    # ── Xử lý khi trạng thái chuyển sang CANCELLED ─────────────────────────
+    refund_status = None
     if body.status == "cancelled":
-        # Hoàn lại stock cho từng item
+        cancellation_reason = clean_required_text(body.note, max_length=255, field_name="reason")
+        if len(cancellation_reason) < 5:
+            raise HTTPException(status_code=422, detail="Lý do hủy phải có ít nhất 5 ký tự.")
+
+        payment_method = db.query(PaymentMethod).filter(PaymentMethod.id == order.payment_method_id).first()
+        payment_code = payment_method.code.strip().upper() if payment_method else ""
+        if order.payment_status == "paid":
+            if payment_code != "VNPAY":
+                raise HTTPException(status_code=409, detail="Đơn đã thanh toán không hỗ trợ hoàn tiền tự động.")
+            refund = initiate_full_refund(
+                db,
+                order.id,
+                current_admin.id,
+                cancellation_reason,
+                get_trusted_client_ip(request),
+            )
+            refund_status = refund.status
+            db.refresh(order)
+
+        variant_ids = [item.variant_id for item in order.items]
+        variants = (
+            db.query(ProductVariant)
+            .filter(ProductVariant.id.in_(variant_ids))
+            .with_for_update()
+            .all()
+            if variant_ids
+            else []
+        )
+        variant_map = {variant.id: variant for variant in variants}
         for item in order.items:
-            variant = db.query(ProductVariant).filter(ProductVariant.id == item.variant_id).with_for_update().first()
+            variant = variant_map.get(item.variant_id)
             if variant:
                 variant.stock += item.quantity
 
-        # Hoàn lại lượt dùng coupon (nếu có)
         if order.coupon_id:
-            from app.modules.coupon.models import Coupon, CouponUsage
             coupon = db.query(Coupon).filter(Coupon.id == order.coupon_id).with_for_update().first()
             if coupon:
                 coupon.quantity += 1
-            # Xóa coupon usage record
             db.query(CouponUsage).filter(
                 CouponUsage.coupon_id == order.coupon_id,
                 CouponUsage.order_id == order.id,
@@ -935,34 +1270,40 @@ def update_order_status(
 
     order.status = body.status
 
-    # Tự động cập nhật payment_status khi đơn thành công
-    if body.status == "success":
-        order.payment_status = "paid"
-
-    # Ghi lịch sử trạng thái & commission
     commission = db.query(AffiliateCommission).filter(AffiliateCommission.order_id == order.id).first()
-    if commission:
-        if body.status == "success":
-            commission.status = "approved"
-            commission.approved_at = datetime.utcnow()
-        elif body.status == "cancelled":
-            commission.status = "cancelled"
+    if commission and body.status == "cancelled":
+        commission.status = "cancelled"
 
     db.add(OrderStatusHistory(
         order_id=order.id,
         status=body.status,
-        note=clean_text(body.note, max_length=1000, field_name="note") or f"Admin update: {old_status} -> {body.status}",
+        note=(
+            cancellation_reason
+            if body.status == "cancelled"
+            else f"Admin update: {old_status} -> {body.status}"
+        ),
         changed_by=current_admin.id,
     ))
 
     db.commit()
     db.refresh(order)
+    if commission:
+        _dashboard_cache_invalidate(commission.user_id)
 
-    # Invalidate cache vì stock sản phẩm đã có thay đổi
-    home_products_cache.invalidate()
-    product_cards_cache.invalidate()
+    if body.status == "cancelled":
+        home_products_cache.invalidate()
+        product_cards_cache.invalidate()
 
-    return {"message": "Cập nhật trạng thái thành công", "order_id": order.id, "status": order.status}
+    return {
+        "message": (
+            "Đơn hàng đã được hủy; VNPay đang xử lý hoàn tiền."
+            if refund_status == "pending"
+            else "Cập nhật trạng thái thành công"
+        ),
+        "order_id": order.id,
+        "status": order.status,
+        "refund_status": refund_status,
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -987,6 +1328,7 @@ class ProductCreateAdmin(BaseModel):
     category_id: Optional[int] = None
     description: Optional[str] = None
     base_price: float
+    commission_rate: float = Field(default=10.0, ge=0, le=100)
     thumbnail: Optional[str] = None
     gender: int = 2
     status: int = 1
@@ -998,6 +1340,7 @@ class ProductUpdateAdmin(BaseModel):
     category_id: Optional[int] = None
     description: Optional[str] = None
     base_price: Optional[float] = None
+    commission_rate: Optional[float] = Field(default=None, ge=0, le=100)
     thumbnail: Optional[str] = None
     gender: Optional[int] = None
     status: Optional[int] = None
@@ -1022,6 +1365,7 @@ class ProductWithVariantsUpdate(BaseModel):
     category_id: Optional[int] = None
     description: Optional[str] = None
     base_price: Optional[float] = None
+    commission_rate: Optional[float] = Field(default=None, ge=0, le=100)
     thumbnail: Optional[str] = None
     gender: Optional[int] = None
     status: Optional[int] = None
@@ -1078,6 +1422,7 @@ def admin_get_products(
             "category_name": p.category.name if p.category else None,
             "description": p.description,
             "base_price": float(p.base_price),
+            "commission_rate": float(p.commission_rate),
             "thumbnail": p.thumbnail,
             "gender": p.gender,
             "status": p.status,
@@ -1117,6 +1462,7 @@ def admin_get_product(
         "category_name": product.category.name if product.category else None,
         "description": product.description,
         "base_price": float(product.base_price),
+        "commission_rate": float(product.commission_rate),
         "thumbnail": product.thumbnail,
         "gender": product.gender,
         "status": product.status,
@@ -1323,7 +1669,7 @@ def admin_bulk_product_delete(
 
 class BatchCommissionStatusBody(BaseModel):
     ids: List[int]
-    status: Literal["approved", "paid", "cancelled"]
+    status: Literal["approved", "cancelled"]
     note: Optional[str] = None
 
 
@@ -1336,26 +1682,32 @@ def admin_batch_commission_status(
     if not body.ids:
         return {"message": "Không có hoa hồng nào được chọn", "updated": 0}
 
-    commissions = db.query(AffiliateCommission).filter(
-        AffiliateCommission.id.in_(body.ids)
-    ).all()
+    previews = (
+        db.query(AffiliateCommission.id, AffiliateCommission.user_id)
+        .filter(AffiliateCommission.id.in_(body.ids))
+        .all()
+    )
+    _lock_affiliate_users(db, {user_id for _, user_id in previews})
+    commissions = (
+        db.query(AffiliateCommission)
+        .filter(AffiliateCommission.id.in_(body.ids))
+        .with_for_update()
+        .all()
+    )
+    _validate_commission_status_change(db, commissions, body.status)
 
     now = datetime.now()
     for commission in commissions:
         commission.status = body.status
         if body.status == "approved" and commission.approved_at is None:
             commission.approved_at = now
-        elif body.status == "paid":
-            if commission.approved_at is None:
-                commission.approved_at = now
-            commission.paid_at = now
-        elif body.status == "cancelled":
-            pass  # just set status
         if body.note is not None:
             commission.note = clean_text(body.note, max_length=1000, field_name="note")
 
     db.commit()
-    label_map = {"approved": "duyệt", "paid": "đánh dấu đã thanh toán", "cancelled": "hủy"}
+    for user_id in {commission.user_id for commission in commissions}:
+        _dashboard_cache_invalidate(user_id)
+    label_map = {"approved": "duyệt", "cancelled": "hủy"}
     return {
         "message": f"Đã {label_map[body.status]} {len(commissions)} hoa hồng",
         "updated": len(commissions),

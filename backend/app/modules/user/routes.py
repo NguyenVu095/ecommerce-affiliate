@@ -1,8 +1,14 @@
 import logging
+import os
 from datetime import datetime, timedelta, timezone
 
 import jwt
+from google.auth.exceptions import GoogleAuthError
+from google.auth.transport import requests as google_requests
+from google.oauth2 import id_token
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.deps import decode_token_payload, get_current_user, oauth2_scheme
@@ -12,6 +18,7 @@ from app.core.validation import clean_required_text, clean_text, normalize_url
 from app.db.database import get_db
 from app.modules.user.models import TokenBlocklist, User, UserAddress
 from app.modules.user.schemas import (
+    GoogleLogin,
     PasswordChange,
     Token,
     UserAddressCreate,
@@ -25,6 +32,74 @@ from app.modules.user.schemas import (
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+def _google_verification_error_detail(exc: Exception) -> str:
+    message = str(exc).lower()
+    if "wrong audience" in message:
+        return "Google credential audience does not match the configured Client ID."
+    if "used too early" in message or "token expired" in message:
+        return "Google credential time validation failed. Please check the server clock and try again."
+    return "Invalid Google credential."
+
+
+def _issue_access_token(user: User) -> Token:
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={
+            "sub": str(user.id),
+            "role": user.role,
+            "token_version": int(user.token_version or 0),
+        },
+        expires_delta=access_token_expires,
+    )
+    return Token(access_token=access_token, token_type="bearer")
+
+
+def _verify_google_credential(credential: str) -> dict:
+    client_id = os.getenv("GOOGLE_CLIENT_ID", "").strip()
+    if not client_id:
+        logger.error("Google login requested but GOOGLE_CLIENT_ID is not configured.")
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Google login is not configured.")
+
+    try:
+        claims = id_token.verify_oauth2_token(
+            credential.strip(),
+            google_requests.Request(),
+            client_id,
+            clock_skew_in_seconds=60,
+        )
+    except (GoogleAuthError, ValueError) as exc:
+        logger.warning("Rejected invalid Google ID token: %s: %s", type(exc).__name__, exc)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=_google_verification_error_detail(exc),
+        ) from exc
+
+    if claims.get("email_verified") is not True:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Google email is not verified.")
+    return claims
+
+
+def _google_avatar(claims: dict) -> str | None:
+    picture = claims.get("picture")
+    if not isinstance(picture, str) or len(picture) > 255:
+        return None
+    try:
+        return normalize_url(picture, max_length=255, field_name="picture")
+    except HTTPException:
+        return None
+
+
+def _google_is_authoritative_for_email(claims: dict, email: str) -> bool:
+    if email.endswith("@gmail.com"):
+        return True
+    hosted_domain = claims.get("hd")
+    return (
+        isinstance(hosted_domain, str)
+        and bool(hosted_domain.strip())
+        and email.rsplit("@", 1)[-1] == hosted_domain.strip().lower()
+    )
 
 
 def _revoke_token(db: Session, token: str, user_id: int, reason: str) -> None:
@@ -92,16 +167,100 @@ def login(user: UserLogin, db: Session = Depends(get_db)) -> Token:
             detail="Your account has been locked or disabled.",
         )
 
-    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = create_access_token(
-        data={
-            "sub": str(db_user.id),
-            "role": db_user.role,
-            "token_version": int(db_user.token_version or 0),
-        },
-        expires_delta=access_token_expires,
+    return _issue_access_token(db_user)
+
+
+@router.post("/google", response_model=Token, dependencies=[Depends(login_rate_limiter)])
+def google_login(body: GoogleLogin, db: Session = Depends(get_db)) -> Token:
+    """Verify a Google ID token, then create or sign in a customer account."""
+    claims = _verify_google_credential(body.credential)
+    google_id = str(claims.get("sub", "")).strip()
+    email = str(claims.get("email", "")).lower().strip()
+    if not google_id or not email:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Google credential is missing user details.")
+
+    db_user = db.query(User).filter(User.google_id == google_id).first()
+    matched_by_google_id = db_user is not None
+    if db_user is None:
+        db_user = db.query(User).filter(User.email == email).first()
+
+    if db_user is not None and db_user.google_id not in (None, google_id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This email is already linked to another Google account.",
+        )
+    if db_user is not None and db_user.status != 1:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your account has been locked or disabled.",
+        )
+    if (
+        db_user is not None
+        and not matched_by_google_id
+        and db_user.google_id is None
+        and not _google_is_authoritative_for_email(claims, email)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An account with this email already exists. Please sign in with its password.",
+        )
+
+    raw_name = claims.get("name")
+    full_name = clean_required_text(
+        raw_name if isinstance(raw_name, str) and raw_name.strip() else email.split("@", 1)[0],
+        max_length=255,
+        field_name="name",
     )
-    return {"access_token": access_token, "token_type": "bearer"}
+    avatar = _google_avatar(claims)
+
+    if db_user is None:
+        db_user = User(
+            email=email,
+            full_name=full_name,
+            password=None,
+            google_id=google_id,
+            auth_provider="google",
+            avatar=avatar,
+            role=0,
+            status=1,
+        )
+        db.add(db_user)
+    else:
+        db_user.google_id = google_id
+        db_user.auth_provider = "google"
+        db_user.full_name = full_name
+        if avatar:
+            db_user.avatar = avatar
+
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        db_user = db.query(User).filter(or_(User.google_id == google_id, User.email == email)).first()
+        if db_user is None or db_user.google_id not in (None, google_id):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Unable to link this Google account.",
+            ) from exc
+        if db_user.status != 1:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Your account has been locked or disabled.",
+            ) from exc
+        if db_user.google_id is None:
+            db_user.google_id = google_id
+            db_user.auth_provider = "google"
+            try:
+                db.commit()
+            except IntegrityError as retry_exc:
+                db.rollback()
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Unable to link this Google account.",
+                ) from retry_exc
+
+    logger.info("Google login successful: user_id=%s, email=%s", db_user.id, email)
+    return _issue_access_token(db_user)
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)

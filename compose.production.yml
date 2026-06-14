@@ -37,6 +37,7 @@ services:
       dockerfile: deploy/frontend-user.Dockerfile
       args:
         VITE_API_URL: ${VITE_API_URL:?VITE_API_URL is required}
+        VITE_GOOGLE_CLIENT_ID: ${VITE_GOOGLE_CLIENT_ID:?VITE_GOOGLE_CLIENT_ID is required}
     restart: unless-stopped
     ports:
       - "127.0.0.1:8080:80"

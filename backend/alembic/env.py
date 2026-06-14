@@ -6,7 +6,16 @@ from dotenv import load_dotenv
 from app.db.database import Base
 # Import tất cả models ở đây để Alembic thấy được bảng
 from app.modules.user.models import TokenBlocklist, User, UserAddress
-from app.modules.order.models import Order, OrderItem, ShippingMethod, PaymentMethod, OrderStatusHistory
+from app.modules.order.models import (
+    Order,
+    OrderItem,
+    OrderStatusHistory,
+    PaymentGatewayEvent,
+    PaymentMethod,
+    PaymentRefund,
+    PaymentTransaction,
+    ShippingMethod,
+)
 from app.modules.product.models import Product
 from app.modules.product.variant_models import ProductVariant
 from app.modules.product.review_models import ProductReview

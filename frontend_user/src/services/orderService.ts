@@ -92,7 +92,8 @@ export interface Order {
   discount_amount: number;
   total_final: number;
   status: "pending" | "confirmed" | "shipping" | "success" | "cancelled";
-  payment_status: "unpaid" | "paid";
+  payment_status: "unpaid" | "paid" | "refunded";
+  payment_method_code: string | null;
   ghn_status: string | null;
   expected_delivery_time: string | null;
   shipping_order_code: string | null;
@@ -197,4 +198,3 @@ export async function lookupOrder(orderCode: string, contact: string): Promise<O
 export async function cancelOrder(orderId: number): Promise<void> {
   await api.patch(`/api/orders/${orderId}/cancel`, {});
 }
-

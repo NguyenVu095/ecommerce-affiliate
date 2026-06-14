@@ -139,6 +139,7 @@ const statusLabel: Record<string, string> = {
 const paymentLabel: Record<string, string> = {
   paid: 'Đã thanh toán',
   unpaid: 'Chưa thanh toán',
+  refunded: 'Đã hoàn tiền',
 }
 
 const currency = (value: number) =>
@@ -624,7 +625,7 @@ export default function DashboardPage() {
                           </td>
                           <td><StatusBadge status={order.status} /></td>
                           <td>
-                            <span className={order.payment_status === 'paid' ? 'badge badge-paid' : 'badge badge-unpaid'}>
+                            <span className={`badge badge-${order.payment_status}`}>
                               {paymentLabel[order.payment_status] || order.payment_status}
                             </span>
                           </td>

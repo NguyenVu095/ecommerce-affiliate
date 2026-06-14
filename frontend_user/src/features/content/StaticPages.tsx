@@ -106,7 +106,7 @@ const pages: Record<PageKey, {
       {
         title: "Thanh toán và vận chuyển",
         items: [
-          "Hệ thống hỗ trợ COD, chuyển khoản và VNPAY mock trong môi trường phát triển.",
+          "Hệ thống hỗ trợ COD. Các phương thức trực tuyến chỉ hiển thị sau khi được cấu hình và xác minh.",
           "Phí vận chuyển được tính theo địa chỉ nhận hàng và thông tin kiện hàng.",
         ],
       },

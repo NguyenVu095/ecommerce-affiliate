@@ -32,6 +32,7 @@ interface ProductSummary {
   category_id: number | null
   description: string | null
   base_price: number
+  commission_rate: number
   thumbnail: string | null
   gender: number
   status: number
@@ -69,6 +70,7 @@ export default function ProductFormModal({ product, categories, onClose }: Props
   const [categoryId, setCategoryId] = useState(product?.category_id?.toString() || '')
   const [description, setDescription] = useState(product?.description || '')
   const [basePrice, setBasePrice] = useState(product?.base_price?.toString() || '')
+  const [commissionRate, setCommissionRate] = useState(product?.commission_rate?.toString() || '10')
   const [thumbnail, setThumbnail] = useState(product?.thumbnail || '')
   const [gender, setGender] = useState(product?.gender?.toString() ?? '2')
   const [status, setStatus] = useState(product?.status?.toString() ?? '1')
@@ -91,6 +93,7 @@ export default function ProductFormModal({ product, categories, onClose }: Props
         setCategoryId(data.category_id?.toString() || '')
         setDescription(data.description || '')
         setBasePrice(data.base_price.toString())
+        setCommissionRate(data.commission_rate.toString())
         setThumbnail(data.thumbnail || '')
         setGender(data.gender.toString())
         setStatus(data.status.toString())
@@ -148,6 +151,9 @@ export default function ProductFormModal({ product, categories, onClose }: Props
     if (!name.trim()) return setError('Tên sản phẩm không được để trống')
     if (!slug.trim()) return setError('Slug không được để trống')
     if (!basePrice || isNaN(Number(basePrice))) return setError('Giá gốc không hợp lệ')
+    if (isNaN(Number(commissionRate)) || Number(commissionRate) < 0 || Number(commissionRate) > 100) {
+      return setError('Tỷ lệ hoa hồng phải từ 0 đến 100%')
+    }
 
     setLoading(true)
     try {
@@ -173,6 +179,7 @@ export default function ProductFormModal({ product, categories, onClose }: Props
         category_id: categoryId ? Number(categoryId) : null,
         description: description || null,
         base_price: Number(basePrice),
+        commission_rate: Number(commissionRate),
         thumbnail: thumbnail || null,
         gender: Number(gender),
         status: Number(status),
@@ -302,11 +309,15 @@ export default function ProductFormModal({ product, categories, onClose }: Props
                 </Field>
               </div>
 
-              {/* Price & Thumbnail */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+              {/* Price, commission & thumbnail */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
                 <Field label="Giá gốc (₫) *">
                   <input className="admin-input" style={{ width: '100%' }} type="number" min={0}
                     value={basePrice} onChange={e => setBasePrice(e.target.value)} placeholder="150000" />
+                </Field>
+                <Field label="Hoa hồng affiliate (%)">
+                  <input className="admin-input" style={{ width: '100%' }} type="number" min={0} max={100} step={0.01}
+                    value={commissionRate} onChange={e => setCommissionRate(e.target.value)} placeholder="10" />
                 </Field>
                 <Field label="URL ảnh thumbnail">
                   <input className="admin-input" style={{ width: '100%' }} value={thumbnail}

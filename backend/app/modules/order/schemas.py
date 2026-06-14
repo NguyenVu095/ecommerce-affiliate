@@ -106,6 +106,7 @@ class OrderResponse(BaseModel):
     order_code: str
     status: str
     payment_status: str
+    payment_method_code: Optional[str] = None
     user_id: Optional[int] = None
     coupon_id: Optional[int] = None
     coupon_code: Optional[str] = None

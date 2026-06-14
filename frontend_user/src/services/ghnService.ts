@@ -92,14 +92,11 @@ export const ghnService = {
    * @returns Phí ship tính bằng VND.
    */
   getShippingFee: async (payload: ShippingFeeRequest): Promise<number> => {
-    // Hằng số phí ship dự phòng khi API không phản hồi được
-    const DEFAULT_SHIPPING_FEE = 30000;
-    try {
-      const response = await api.post<ShippingFeeResponse>(`${API_URL}/fee`, payload);
-      return response.data?.data?.total ?? DEFAULT_SHIPPING_FEE;
-    } catch (error) {
-      console.error("Error fetching shipping fee:", error);
-      return DEFAULT_SHIPPING_FEE;
+    const response = await api.post<ShippingFeeResponse>(`${API_URL}/fee`, payload);
+    const fee = response.data?.data?.total;
+    if (typeof fee !== 'number' || fee < 0) {
+      throw new Error('Invalid shipping fee response');
     }
+    return fee;
   }
 };

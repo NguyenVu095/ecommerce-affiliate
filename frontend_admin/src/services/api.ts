@@ -59,7 +59,39 @@ export interface AdminRevenueChartResponse {
 }
 
 export type OrderStatus = 'pending' | 'confirmed' | 'shipping' | 'success' | 'cancelled'
-export type PaymentStatus = 'paid' | 'unpaid' | string
+export type PaymentStatus = 'paid' | 'unpaid' | 'refunded' | string
+
+export interface AdminPaymentRefund {
+  id: number
+  request_id: string
+  amount: number
+  status: string
+  reason: string
+  response_code: string | null
+  transaction_status: string | null
+  created_at: string | null
+  completed_at: string | null
+}
+
+export interface AdminPaymentTransaction {
+  id: number
+  order_id: number
+  provider: string
+  txn_ref: string
+  amount: number
+  currency: string
+  status: string
+  gateway_transaction_no: string | null
+  response_code: string | null
+  transaction_status: string | null
+  bank_code: string | null
+  card_type: string | null
+  pay_date: string | null
+  confirmed_at: string | null
+  last_reconciled_at: string | null
+  created_at: string | null
+  refunds: AdminPaymentRefund[]
+}
 
 export interface AdminOrderItem {
   id: number
@@ -128,6 +160,7 @@ export interface AdminProduct {
   category_name: string | null
   description: string | null
   base_price: number
+  commission_rate: number
   thumbnail: string | null
   gender: number
   status: number
@@ -175,6 +208,7 @@ export interface AdminProductPayload {
   category_id: number | null
   description: string | null
   base_price: number
+  commission_rate: number
   thumbnail: string | null
   gender: number
   status: number
@@ -265,8 +299,9 @@ export interface CouponUsageStats {
 }
 
 export type CommissionStatus = 'pending' | 'approved' | 'paid' | 'cancelled'
-export type BatchCommissionStatus = Exclude<CommissionStatus, 'pending'>
+export type BatchCommissionStatus = 'approved' | 'cancelled'
 export type AttributionType = 'cookie' | 'code' | 'manual'
+export type WithdrawalStatus = 'pending' | 'approved' | 'rejected' | 'paid'
 
 export interface AdminAffiliateFilter {
   page?: number
@@ -290,6 +325,13 @@ export interface AdminAffiliateConversionFilter {
   attribution_type?: string
   date_from?: string
   date_to?: string
+}
+
+export interface AdminAffiliateWithdrawalFilter {
+  page?: number
+  page_size?: number
+  search?: string
+  status?: string
 }
 
 export interface AdminAffiliateStats {
@@ -395,6 +437,29 @@ export interface AdminCommissionStatusResponse extends MessageResponse {
   updated?: number
 }
 
+export interface AdminWithdrawalRow {
+  id: number
+  user_id: number
+  user_name: string
+  user_email: string
+  referral_code: string
+  amount: number
+  status: WithdrawalStatus
+  bank_name: string
+  bank_account: string
+  bank_owner: string
+  note: string | null
+  admin_note: string | null
+  created_at: string | null
+  processed_at: string | null
+}
+
+export interface AdminWithdrawalStatusResponse extends MessageResponse {
+  withdrawal_id: number
+  status: WithdrawalStatus
+  processed_at: string
+}
+
 export interface AdminUserFilter {
   page?: number
   page_size?: number
@@ -458,19 +523,35 @@ export interface ShipperNextStatus {
   label: string
 }
 
+export interface ShipperOrderItem {
+  name: string
+  variant: string | null
+  sku: string | null
+  quantity: number
+}
+
 export interface ShipperOrder {
   id: number
   order_code: string
-  status: string
+  order_status: string
   ghn_status: string
   ghn_label: string
   next_statuses: ShipperNextStatus[]
+  receiver_name: string | null
+  receiver_phone: string | null
+  receiver_email: string | null
   total_final: number
   shipping_fee: number
+  payment_status: string
+  payment_method_code: string
+  cod_amount: number
   address: string
   note: string | null
-  items: string[]
+  items: ShipperOrderItem[]
+  shipping_order_code: string | null
+  expected_delivery_time: string | null
   created_at: string | null
+  updated_at: string | null
 }
 
 export interface ShipperStatusResponse {
@@ -479,6 +560,13 @@ export interface ShipperStatusResponse {
   ghn_label: string
   order_status: string
   next_statuses: ShipperNextStatus[]
+}
+
+export interface ShipmentDetailsResponse {
+  message: string
+  order_id: number
+  shipping_order_code: string
+  expected_delivery_time: string | null
 }
 
 interface ErrorDetailObject {
@@ -556,6 +644,18 @@ export const getOrderDetailApi = (id: number) =>
 export const updateOrderStatusApi = (id: number, status: string, note?: string) =>
   api.patch<OrderStatusResponse>(`/api/admin/orders/${id}/status`, { status, note })
 
+export const getOrderPaymentTransactionsApi = (id: number) =>
+  api.get<AdminPaymentTransaction[]>(`/api/admin/orders/${id}/payment-transactions`)
+
+export const reconcilePaymentTransactionApi = (id: number) =>
+  api.post<AdminPaymentTransaction>(`/api/admin/payment-transactions/${id}/reconcile`)
+
+export const refundOrderPaymentApi = (id: number, reason: string) =>
+  api.post<{ message: string; refund_id: number; order_id: number; status: string }>(
+    `/api/admin/orders/${id}/refund`,
+    { reason },
+  )
+
 export const getAdminProductsApi = (params: ProductFilter = {}) =>
   api.get<PaginatedResponse<AdminProduct>>('/api/admin/products', { params })
 
@@ -607,11 +707,23 @@ export const getAdminAffiliateCommissionsApi = (params: AdminAffiliateCommission
 export const getAdminAffiliateConversionsApi = (params: AdminAffiliateConversionFilter = {}) =>
   api.get<AdminConversionListResponse>('/api/admin/affiliate-conversions', { params })
 
+export const getAdminAffiliateWithdrawalsApi = (params: AdminAffiliateWithdrawalFilter = {}) =>
+  api.get<PaginatedResponse<AdminWithdrawalRow>>('/api/admin/affiliate-withdrawals', { params })
+
 export const updateAdminAffiliateCommissionStatusApi = (
   id: number,
-  status: CommissionStatus,
+  status: BatchCommissionStatus,
   note?: string,
 ) => api.patch<AdminCommissionStatusResponse>(`/api/admin/affiliate-commissions/${id}/status`, { status, note })
+
+export const updateAdminAffiliateWithdrawalStatusApi = (
+  id: number,
+  status: Exclude<WithdrawalStatus, 'pending'>,
+  adminNote?: string,
+) => api.patch<AdminWithdrawalStatusResponse>(`/api/admin/affiliate-withdrawals/${id}/status`, {
+  status,
+  admin_note: adminNote,
+})
 
 export const getAdminUsersApi = (params: AdminUserFilter = {}) =>
   api.get<PaginatedResponse<AdminUserRow>>('/api/admin/users', { params })
@@ -652,8 +764,20 @@ export const getCouponUsageStatsApi = (couponId: number) =>
 export const getShipperOrdersApi = () =>
   api.get<ShipperOrder[]>('/api/shipper/orders')
 
-export const updateShipperOrderStatusApi = (orderId: number, ghnStatus: string) =>
-  api.patch<ShipperStatusResponse>(`/api/shipper/orders/${orderId}/status`, { ghn_status: ghnStatus })
+export const updateShipperOrderStatusApi = (orderId: number, ghnStatus: string, note?: string) =>
+  api.patch<ShipperStatusResponse>(`/api/shipper/orders/${orderId}/status`, {
+    ghn_status: ghnStatus,
+    note,
+  })
+
+export const updateShipmentDetailsApi = (
+  orderId: number,
+  shippingOrderCode: string,
+  expectedDeliveryTime?: string,
+) => api.patch<ShipmentDetailsResponse>(`/api/shipper/orders/${orderId}/shipment`, {
+  shipping_order_code: shippingOrderCode,
+  expected_delivery_time: expectedDeliveryTime || null,
+})
 
 export function getErrorMessage(err: unknown, fallback = 'Đã xảy ra lỗi'): string {
   if (axios.isAxiosError(err) && err.response?.data && isRecord(err.response.data)) {

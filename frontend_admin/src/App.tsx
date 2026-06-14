@@ -12,6 +12,7 @@ const OrderDetailPage         = lazy(() => import('./features/orders/OrderDetail
 const ProductListPage         = lazy(() => import('./features/products/ProductListPage'))
 const CouponListPage          = lazy(() => import('./features/coupons/CouponListPage'))
 const AffiliateManagementPage = lazy(() => import('./features/affiliates/AffiliateManagementPage'))
+const WithdrawalManagementPage = lazy(() => import('./features/affiliates/WithdrawalManagementPage'))
 const UserListPage            = lazy(() => import('./features/users/UserListPage'))
 const CategoryListPage        = lazy(() => import('./features/categories/CategoryListPage'))
 const ShipperPage             = lazy(() => import('./features/shipper/ShipperPage'))
@@ -27,6 +28,7 @@ const PROTECTED_ROUTES = [
   { path: '/products',   element: <ProductListPage /> },
   { path: '/coupons',    element: <CouponListPage /> },
   { path: '/affiliates', element: <AffiliateManagementPage /> },
+  { path: '/withdrawals', element: <WithdrawalManagementPage /> },
   { path: '/shipping',   element: <ShipperPage /> },
   { path: '/users',      element: <UserListPage /> },
   { path: '/categories', element: <CategoryListPage /> },
@@ -112,4 +114,3 @@ function App() {
 }
 
 export default App
-

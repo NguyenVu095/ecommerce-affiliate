@@ -83,7 +83,7 @@ def seed_data() -> None:
         print("--- Tạo phương thức thanh toán & vận chuyển ---")
         p_methods = [
             PaymentMethod(name="Thanh toán khi nhận hàng (COD)", code="COD", description="Thanh toán trực tiếp khi nhận hàng", status=1),
-            PaymentMethod(name="Chuyển khoản ngân hàng", code="BANK_TRANSFER", description="Chuyển khoản qua số tài khoản ngân hàng", status=1),
+            PaymentMethod(name="Cổng thanh toán VNPay", code="VNPAY", description="Thanh toán trực tuyến qua cổng VNPay", status=1),
             PaymentMethod(name="Ví điện tử MoMo", code="MOMO", description="Thanh toán qua ứng dụng MoMo", status=1),
         ]
         db.add_all(p_methods)

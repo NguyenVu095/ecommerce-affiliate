@@ -133,7 +133,7 @@ export default function OrderListPage() {
           o.receiver_phone || '',
           o.user_email || '',
           STATUS_LABEL[o.status] || o.status,
-          o.payment_status === 'paid' ? 'Đã TT' : 'Chưa TT',
+          o.payment_status === 'paid' ? 'Đã TT' : o.payment_status === 'refunded' ? 'Đã hoàn tiền' : 'Chưa TT',
           o.total_final,
           o.created_at ? fmtDate(o.created_at) : '',
         ].join(','))
@@ -311,7 +311,7 @@ export default function OrderListPage() {
                       </td>
                       <td>
                         <span className={`badge badge-${order.payment_status}`}>
-                          {order.payment_status === 'paid' ? 'Đã TT' : 'Chưa TT'}
+                          {order.payment_status === 'paid' ? 'Đã TT' : order.payment_status === 'refunded' ? 'Đã hoàn tiền' : 'Chưa TT'}
                         </span>
                       </td>
                       <td style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>

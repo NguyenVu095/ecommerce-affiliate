@@ -29,7 +29,16 @@ from app.modules.product.variant_models import ProductVariant
 from app.modules.product.review_models import ProductReview
 from app.modules.category.models import Category
 from app.modules.coupon.models import Coupon, CouponUsage
-from app.modules.order.models import Order, OrderItem, ShippingMethod, PaymentMethod, OrderStatusHistory
+from app.modules.order.models import (
+    Order,
+    OrderItem,
+    OrderStatusHistory,
+    PaymentGatewayEvent,
+    PaymentMethod,
+    PaymentRefund,
+    PaymentTransaction,
+    ShippingMethod,
+)
 from app.modules.affiliate.models import AffiliateClick, AffiliateCommission, AffiliateConversion, AffiliateLink
 from app.modules.newsletter.models import NewsletterSubscription
 from app.modules.chat.models import ChatSession, ChatMessage

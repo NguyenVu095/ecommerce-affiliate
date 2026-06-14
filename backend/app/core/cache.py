@@ -9,6 +9,7 @@ import json
 import logging
 import time
 from typing import Any
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 _REDIS_CLIENT = None
@@ -24,10 +25,19 @@ except ImportError:
 # ─── Hằng số TTL (Time-To-Live) cho từng loại cache ─────────────────────────
 # Đặt thành hằng số có tên rõ ràng thay vì magic number inline comment
 # để dễ điều chỉnh và tránh nhầm lẫn khi có nhiều cache instance.
-_TTL_CATEGORY_TREE        = 600  # 10 phút — cây danh mục ít thay đổi
-_TTL_HOME_PRODUCTS        = 600  # 10 phút — sản phẩm trang chủ
-_TTL_CATEGORY_DESCENDANTS = 600  # 10 phút — danh sách con của danh mục
-_TTL_PRODUCT_CARDS        = 60   # 1 phút  — thẻ sản phẩm cần tươi hơn
+_TTL_CATEGORY_TREE        = 3600  # 1 giờ — cây danh mục được invalidate khi admin cập nhật
+_TTL_HOME_PRODUCTS        = 3600  # 1 giờ — sản phẩm trang chủ được invalidate khi dữ liệu đổi
+_TTL_CATEGORY_DESCENDANTS = 3600  # 1 giờ — danh sách con được invalidate cùng danh mục
+_TTL_PRODUCT_CARDS        = 300   # 5 phút — giảm cache miss tới PostgreSQL từ xa
+
+
+def _describe_redis_url(redis_url: str) -> str:
+    """Return a log-safe Redis target without credentials."""
+    parsed = urlparse(redis_url)
+    host = parsed.hostname or "unknown-host"
+    port = f":{parsed.port}" if parsed.port else ""
+    database = parsed.path or "/0"
+    return f"{parsed.scheme}://{host}{port}{database}"
 
 
 def _get_redis_client(redis_url: str | None):
@@ -41,6 +51,7 @@ def _get_redis_client(redis_url: str | None):
     _REDIS_INIT_ATTEMPTED = True
 
     if REDIS_AVAILABLE and redis_url:
+        redis_target = _describe_redis_url(redis_url)
         try:
             _REDIS_CLIENT = redis.Redis.from_url(
                 redis_url,
@@ -49,13 +60,13 @@ def _get_redis_client(redis_url: str | None):
                 socket_connect_timeout=0.5,
             )
             _REDIS_CLIENT.ping()
-            logger.info("Redis cache initialized using %s", redis_url)
+            logger.info("Redis cache initialized using %s", redis_target)
         except Exception as e:
             # Dùng %s format (lazy evaluation) thay vì f-string:
             # tránh build chuỗi không cần thiết khi log handler lọc bỏ ERROR.
             logger.error(
                 "Failed to connect to Redis at %s: %s. Falling back to in-memory cache.",
-                redis_url, e,
+                redis_target, e,
             )
             _REDIS_CLIENT = None
     elif REDIS_AVAILABLE and not redis_url:

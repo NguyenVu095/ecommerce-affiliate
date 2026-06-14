@@ -59,6 +59,7 @@ html, body, #root {
 .badge-cancelled  { background: #fee2e2; color: #b91c1c; }
 .badge-paid       { background: #dcfce7; color: #15803d; }
 .badge-unpaid     { background: #fef3c7; color: #92400e; }
+.badge-refunded   { background: #e0e7ff; color: #4338ca; }
 
 /* Card */
 .admin-card {

@@ -1,11 +1,11 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { lazy, Suspense, useState, useEffect, useCallback, useMemo } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { ShoppingBag, User, Search, LogOut, ChevronDown, Flame, Menu, X as CloseIcon } from "lucide-react";
 import { useCartStore } from "../store/cartStore";
 import { useAuthStore } from "../store/authStore";
-import CartDrawer from "../features/cart/CartDrawer";
 import { fetchCategories, type Category } from "../services/categoryService";
 
+const CartDrawer = lazy(() => import("../features/cart/CartDrawer"));
 
 export default function Navbar() {
   const [isCartOpen, setIsCartOpen] = useState(false);
@@ -305,7 +305,11 @@ export default function Navbar() {
         </div>
       )}
 
-      <CartDrawer isOpen={isCartOpen} onClose={() => setIsCartOpen(false)} />
+      {isCartOpen && (
+        <Suspense fallback={null}>
+          <CartDrawer isOpen onClose={() => setIsCartOpen(false)} />
+        </Suspense>
+      )}
     </>
   );
 }

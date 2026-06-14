@@ -38,6 +38,22 @@ export async function loginApi(
   return { token, user: meRes.data };
 }
 
+/** Log in with a Google ID token, then fetch the current user profile. */
+export async function googleLoginApi(
+  credential: string
+): Promise<{ token: string; user: User }> {
+  const loginRes = await api.post<LoginResponse>("/api/auth/google", {
+    credential,
+  });
+  const token = loginRes.data.access_token;
+
+  const meRes = await api.get<User>("/api/auth/me", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  return { token, user: meRes.data };
+}
+
 /** Đăng ký tài khoản mới với email và mật khẩu. */
 export async function registerApi(
   email: string,

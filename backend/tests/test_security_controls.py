@@ -15,6 +15,7 @@ sys.path.insert(0, str(BACKEND_DIR))
 load_dotenv(ROOT_DIR / ".env", override=True)
 
 from app.core.security import validate_secret_strength
+from app.core.cache import _describe_redis_url
 from app.core import rate_limit as rate_limit_module
 from app.modules.chat.routes import _get_authorized_session, _hash_chat_access_token
 from app.modules.chat.schemas import ChatMessageCreate, ChatSessionCreate
@@ -24,6 +25,11 @@ from pydantic import ValidationError
 class SecurityControlTests(unittest.TestCase):
     def test_redis_dependency_is_detected(self) -> None:
         self.assertTrue(rate_limit_module.REDIS_AVAILABLE)
+
+    def test_redis_log_target_does_not_expose_credentials(self) -> None:
+        target = _describe_redis_url("rediss://app:super-secret@redis.internal:6380/2")
+        self.assertEqual(target, "rediss://redis.internal:6380/2")
+        self.assertNotIn("super-secret", target)
 
     def test_readiness_requires_redis_ping_when_enabled(self) -> None:
         client = MagicMock()
