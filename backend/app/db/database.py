@@ -13,7 +13,7 @@ load_dotenv()  # Đọc biến môi trường từ file .env
 logger = logging.getLogger(__name__)
 
 # Guard rõ ràng: tránh crash mơ hồ khi DATABASE_URL chưa được cấu hình
-SQLALCHEMY_DATABASE_URL: str = os.getenv("DATABASE_URL", "")
+SQLALCHEMY_DATABASE_URL: str = os.getenv("DATABASE_URL", "").strip()
 if not SQLALCHEMY_DATABASE_URL:
     raise RuntimeError(
         "DATABASE_URL chưa được cấu hình trong file .env. "

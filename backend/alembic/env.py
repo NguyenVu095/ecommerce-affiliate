@@ -38,7 +38,7 @@ from alembic import context
 config = context.config
 
 # Set sqlalchemy.url from environment variable
-database_url = os.environ.get("DATABASE_URL")
+database_url = os.environ.get("DATABASE_URL", "").strip()
 if database_url:
     config.set_main_option("sqlalchemy.url", database_url)
 
