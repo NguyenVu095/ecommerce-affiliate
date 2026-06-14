@@ -8,6 +8,10 @@ from unittest.mock import MagicMock, patch
 
 from dotenv import load_dotenv
 from fastapi import HTTPException
+from starlette.applications import Starlette
+from starlette.responses import HTMLResponse, JSONResponse
+from starlette.routing import Route
+from starlette.testclient import TestClient
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 ROOT_DIR = BACKEND_DIR.parent
@@ -17,12 +21,33 @@ load_dotenv(ROOT_DIR / ".env", override=True)
 from app.core.security import validate_secret_strength
 from app.core.cache import _describe_redis_url
 from app.core import rate_limit as rate_limit_module
+from app.core.middleware import SecurityHeadersMiddleware
 from app.modules.chat.routes import _get_authorized_session, _hash_chat_access_token
 from app.modules.chat.schemas import ChatMessageCreate, ChatSessionCreate
 from pydantic import ValidationError
 
 
 class SecurityControlTests(unittest.TestCase):
+    def test_security_headers_allow_docs_assets_but_keep_api_csp_strict(self) -> None:
+        app = Starlette(
+            routes=[
+                Route("/docs", lambda _request: HTMLResponse("<html></html>")),
+                Route("/api/test", lambda _request: JSONResponse({"ok": True})),
+            ]
+        )
+        app.add_middleware(SecurityHeadersMiddleware, enable_hsts=False)
+
+        with TestClient(app) as client:
+            docs_csp = client.get("/docs").headers["content-security-policy"]
+            api_csp = client.get("/api/test").headers["content-security-policy"]
+
+        self.assertIn("https://cdn.jsdelivr.net", docs_csp)
+        self.assertIn("script-src", docs_csp)
+        self.assertEqual(
+            api_csp,
+            "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
+        )
+
     def test_redis_dependency_is_detected(self) -> None:
         self.assertTrue(rate_limit_module.REDIS_AVAILABLE)
 
