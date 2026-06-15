@@ -1,39 +1,39 @@
 # Ecommerce Affiliate
 
-He thong thuong mai dien tu tich hop affiliate, quan tri don hang, van chuyen
-GHN, dang nhap Google va thanh toan VNPay Sandbox.
+Hệ thống thương mại điện tử tích hợp affiliate, quản trị đơn hàng, vận chuyển
+GHN, đăng nhập Google và thanh toán VNPay Sandbox.
 
-Du an duoc to chuc theo monorepo, gom mot FastAPI backend va ba ung dung
-React/Vite rieng cho khach hang, quan tri vien va doi tac affiliate.
+Dự án được tổ chức theo monorepo, gồm một backend FastAPI và ba ứng dụng
+React/Vite riêng cho khách hàng, quản trị viên và đối tác affiliate.
 
 ## Demo
 
-| Dich vu | URL |
+| Dịch vụ | URL |
 | --- | --- |
-| Customer | [ecommerce-affiliate-customer.vercel.app](https://ecommerce-affiliate-customer.vercel.app) |
-| Admin | [ecommerce-affiliate-admin.vercel.app](https://ecommerce-affiliate-admin.vercel.app) |
+| Khách hàng | [ecommerce-affiliate-customer.vercel.app](https://ecommerce-affiliate-customer.vercel.app) |
+| Quản trị | [ecommerce-affiliate-admin.vercel.app](https://ecommerce-affiliate-admin.vercel.app) |
 | API | [ecommerce-affiliate-api.onrender.com](https://ecommerce-affiliate-api.onrender.com) |
-| API documentation | [Swagger UI](https://ecommerce-affiliate-api.onrender.com/docs) |
-| API readiness | [Health check](https://ecommerce-affiliate-api.onrender.com/health/ready) |
+| Tài liệu API | [Swagger UI](https://ecommerce-affiliate-api.onrender.com/docs) |
+| Trạng thái API | [Health check](https://ecommerce-affiliate-api.onrender.com/health/ready) |
 
-> Render Free co the ngu sau 15 phut khong co request. Lan truy cap dau tien
-> co the mat khoang mot phut de backend khoi dong.
+> Render Free có thể ngủ sau 15 phút không có request. Lần truy cập đầu tiên
+> có thể mất khoảng một phút để backend khởi động.
 
-## Tinh nang
+## Tính năng
 
-- Danh muc san pham nhieu cap, tim kiem, loc, sap xep va phan trang.
-- Bien the san pham theo size, mau sac, gia ban, gia khuyen mai va ton kho.
-- Gio hang, checkout, ma giam gia va tra cuu don hang.
-- Dang ky, dang nhap JWT va Google Sign-In.
-- Thanh toan VNPay Sandbox, Return URL va IPN callback.
-- Tinh phi va quan ly thong tin giao hang GHN.
-- Danh gia san pham sau khi hoan thanh don hang.
-- Dashboard admin quan ly san pham, danh muc, don hang, coupon va nguoi dung.
-- Affiliate link, click tracking, conversion, hoa hong va yeu cau rut tien.
-- Chat ho tro khach hang va newsletter.
-- Rate limiting phan tan bang Redis/Valkey.
+- Danh mục sản phẩm nhiều cấp, tìm kiếm, lọc, sắp xếp và phân trang.
+- Biến thể sản phẩm theo kích thước, màu sắc, giá bán, giá khuyến mãi và tồn kho.
+- Giỏ hàng, checkout, mã giảm giá và tra cứu đơn hàng.
+- Đăng ký, đăng nhập JWT và Google Sign-In.
+- Thanh toán VNPay Sandbox, Return URL và IPN callback.
+- Tính phí và quản lý thông tin giao hàng GHN.
+- Đánh giá sản phẩm sau khi hoàn thành đơn hàng.
+- Dashboard admin quản lý sản phẩm, danh mục, đơn hàng, coupon và người dùng.
+- Affiliate link, click tracking, conversion, hoa hồng và yêu cầu rút tiền.
+- Chat hỗ trợ khách hàng và newsletter.
+- Rate limiting phân tán bằng Redis/Valkey.
 
-## Kien truc
+## Kiến trúc
 
 ```text
 Customer / Admin / Affiliate (Vercel)
@@ -46,61 +46,61 @@ Customer / Admin / Affiliate (Vercel)
    PostgreSQL (Supabase)  Redis/Valkey (Render)
 ```
 
-| Thanh phan | Cong nghe |
+| Thành phần | Công nghệ |
 | --- | --- |
 | Backend | Python, FastAPI, SQLAlchemy, Alembic |
 | Frontend | React 19, TypeScript, Vite, Zustand, Axios |
-| Database | PostgreSQL tren Supabase |
+| Cơ sở dữ liệu | PostgreSQL trên Supabase |
 | Cache/rate limit | Redis/Valkey |
-| Authentication | JWT, Google Identity Services |
-| Payment | VNPay Sandbox |
-| Shipping | GHN Development API |
-| Deployment | Render, Vercel, Supabase |
+| Xác thực | JWT, Google Identity Services |
+| Thanh toán | VNPay Sandbox |
+| Vận chuyển | GHN Development API |
+| Triển khai | Render, Vercel, Supabase |
 
-## Cau truc thu muc
+## Cấu trúc thư mục
 
 ```text
-backend/              FastAPI API, models, migrations va tests
-frontend_user/        Ung dung khach hang
-frontend_admin/       Ung dung admin va shipper
-frontend_affiliate/   Ung dung doi tac affiliate
-deploy/               Dockerfiles va Nginx configuration
-render.yaml           Render Blueprint cho API va Redis
+backend/              FastAPI API, models, migrations và tests
+frontend_user/        Ứng dụng khách hàng
+frontend_admin/       Ứng dụng admin và shipper
+frontend_affiliate/   Ứng dụng đối tác affiliate
+deploy/               Dockerfiles và cấu hình Nginx
+render.yaml           Render Blueprint cho API và Redis
 ```
 
 ## VNPay Sandbox
 
-Thong tin duoi day chi dung de kiem thu tren moi truong VNPay Sandbox. Khong
-phai the ngan hang that va khong phat sinh giao dich tien that.
+Thông tin dưới đây chỉ dùng để kiểm thử trên môi trường VNPay Sandbox. Đây
+không phải thẻ ngân hàng thật và không phát sinh giao dịch tiền thật.
 
-| Truong | Gia tri |
+| Trường | Giá trị |
 | --- | --- |
-| Ngan hang | `NCB` |
-| So the | `9704198526191432198` |
-| Ten chu the | `NGUYEN VAN A` |
-| Ngay phat hanh | `07/15` |
-| Mat khau OTP | `123456` |
+| Ngân hàng | `NCB` |
+| Số thẻ | `9704198526191432198` |
+| Tên chủ thẻ | `NGUYEN VAN A` |
+| Ngày phát hành | `07/15` |
+| Mật khẩu OTP | `123456` |
 
-Quy trinh kiem thu:
+Quy trình kiểm thử:
 
-1. Them san pham vao gio va mo trang checkout.
-2. Chon phuong thuc thanh toan VNPay.
-3. Tai cong thanh toan Sandbox, chon ngan hang `NCB`.
-4. Nhap thong tin the o bang tren.
-5. Nhap OTP `123456`.
-6. Sau khi thanh toan, VNPay chuyen ve trang tra cuu don hang.
-7. Kiem tra trang thai thanh toan trong Customer va Admin.
+1. Thêm sản phẩm vào giỏ và mở trang checkout.
+2. Chọn phương thức thanh toán VNPay.
+3. Tại cổng thanh toán Sandbox, chọn ngân hàng `NCB`.
+4. Nhập thông tin thẻ ở bảng trên.
+5. Nhập OTP `123456`.
+6. Sau khi thanh toán, VNPay chuyển về trang tra cứu đơn hàng.
+7. Kiểm tra trạng thái thanh toán trong Customer và Admin.
 
-## Chay local
+## Chạy local
 
-### Yeu cau
+### Yêu cầu
 
 - Python 3.13
-- Node.js va npm
+- Node.js và npm
 - Redis
-- PostgreSQL/Supabase hoac SQLite cho phat trien
+- PostgreSQL/Supabase hoặc SQLite cho môi trường phát triển
 
-### 1. Cau hinh backend
+### 1. Cấu hình backend
 
 ```powershell
 Copy-Item .env.example .env
@@ -109,7 +109,7 @@ python -m venv venv
 pip install -r backend\requirements.txt
 ```
 
-Cap nhat `.env`, sau do chay migration:
+Cập nhật `.env`, sau đó chạy migration:
 
 ```powershell
 Set-Location backend
@@ -117,12 +117,12 @@ python -m alembic upgrade head
 python -m uvicorn app.main:app --reload --port 8000
 ```
 
-Khong commit `.env`, database password, JWT secret, VNPay hash secret hoac
-token GHN len Git.
+Không commit `.env`, mật khẩu cơ sở dữ liệu, JWT secret, VNPay hash secret hoặc
+token GHN lên Git.
 
-### 2. Chay frontend
+### 2. Chạy frontend
 
-Mo ba terminal:
+Mở ba terminal:
 
 ```powershell
 Set-Location frontend_user
@@ -142,19 +142,19 @@ npm install
 npm run dev
 ```
 
-Dia chi local:
+Địa chỉ local:
 
-| Ung dung | URL |
+| Ứng dụng | URL |
 | --- | --- |
-| Customer | `http://localhost:5173` |
+| Khách hàng | `http://localhost:5173` |
 | Admin | `http://localhost:5174` |
 | Affiliate | `http://localhost:5175` |
 | API | `http://localhost:8000` |
 
-Tren Windows co the chay `run_all.bat` de khoi dong Redis, backend va ba
+Trên Windows có thể chạy `run_all.bat` để khởi động Redis, backend và ba
 frontend.
 
-## Kiem tra
+## Kiểm tra
 
 Backend:
 
@@ -172,21 +172,21 @@ Frontend:
 npm run build
 ```
 
-## Deploy
+## Triển khai
 
 - Render Blueprint: [`render.yaml`](render.yaml)
 
-Ban deploy hien tai dung:
+Bản triển khai hiện tại sử dụng:
 
 - Vercel cho ba React SPA.
-- Render cho FastAPI va Redis/Valkey.
+- Render cho FastAPI và Redis/Valkey.
 - Supabase cho PostgreSQL.
-- VNPay Sandbox cho thanh toan thu nghiem.
+- VNPay Sandbox cho thanh toán thử nghiệm.
 
-## Luu y
+## Lưu ý
 
-- Day la ban demo su dung dich vu free tier va VNPay Sandbox.
-- `APP_ENV=development` dang duoc dung tren Render de cho phep gateway sandbox.
-- Khong su dung cau hinh nay de nhan thanh toan that.
-- Khi chuyen sang production, can bat validation production, dung VNPay
-  production, kiem tra IP outbound va thay toan bo secret.
+- Đây là bản demo sử dụng dịch vụ free tier và VNPay Sandbox.
+- `APP_ENV=development` đang được dùng trên Render để cho phép gateway sandbox.
+- Không sử dụng cấu hình này để nhận thanh toán thật.
+- Khi chuyển sang production, cần bật validation production, dùng VNPay
+  production, kiểm tra IP outbound và thay toàn bộ secret.
