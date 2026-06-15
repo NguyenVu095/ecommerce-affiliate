@@ -21,6 +21,7 @@ load_dotenv(ROOT_DIR / ".env", override=True)
 from app.core.security import validate_secret_strength
 from app.core.cache import _describe_redis_url
 from app.core import rate_limit as rate_limit_module
+from app.core.deps import _enforce_demo_read_only
 from app.core.middleware import SecurityHeadersMiddleware
 from app.modules.chat.routes import _get_authorized_session, _hash_chat_access_token
 from app.modules.chat.schemas import ChatMessageCreate, ChatSessionCreate
@@ -28,6 +29,21 @@ from pydantic import ValidationError
 
 
 class SecurityControlTests(unittest.TestCase):
+    def test_public_demo_accounts_are_read_only(self) -> None:
+        user = SimpleNamespace(email="admin_demo@gmail.com")
+        get_request = MagicMock(method="GET")
+        patch_request = MagicMock(method="PATCH")
+
+        _enforce_demo_read_only(get_request, user)
+        with self.assertRaises(HTTPException) as context:
+            _enforce_demo_read_only(patch_request, user)
+        self.assertEqual(context.exception.status_code, 403)
+        self.assertEqual(context.exception.detail, "Demo account is read-only.")
+
+    def test_regular_accounts_are_not_forced_read_only(self) -> None:
+        user = SimpleNamespace(email="admin@gmail.com")
+        _enforce_demo_read_only(MagicMock(method="DELETE"), user)
+
     def test_security_headers_allow_docs_assets_but_keep_api_csp_strict(self) -> None:
         app = Starlette(
             routes=[

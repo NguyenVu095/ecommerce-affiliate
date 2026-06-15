@@ -124,7 +124,7 @@ def home() -> dict[str, str]:
     """
     API gốc kiểm tra trạng thái hoạt động của hệ thống.
     """
-    return {"status": "Hệ thống đang hoạt động", "version": "2.0.0"}
+    return {"status": "Hệ thống đang hoạt động", "version": "2.1.0"}
 
 
 @app.get("/health/live", include_in_schema=False)

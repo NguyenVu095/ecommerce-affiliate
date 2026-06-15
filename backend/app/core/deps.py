@@ -10,7 +10,7 @@ Tất cả endpoints cần xác thực đều inject một trong các dependency
 from typing import Annotated, Any
 
 import jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
@@ -20,6 +20,11 @@ from app.modules.user.models import TokenBlocklist, User
 
 oauth2_scheme          = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 optional_oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
+_SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+_READ_ONLY_DEMO_EMAILS = {
+    "admin_demo@gmail.com",
+    "affiliate_demo@gmail.com",
+}
 
 
 def _credentials_exception() -> HTTPException:
@@ -115,7 +120,17 @@ def _load_user_from_payload(payload: dict[str, Any], db: Session) -> User:
     return user
 
 
+def _enforce_demo_read_only(request: Request, user: User) -> None:
+    """Block state changes made with the public demo accounts."""
+    if user.email.lower() in _READ_ONLY_DEMO_EMAILS and request.method.upper() not in _SAFE_METHODS:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Demo account is read-only.",
+        )
+
+
 def get_current_user(
+    request: Request,
     token: Annotated[str, Depends(oauth2_scheme)],
     db: Session = Depends(get_db),
 ) -> User:
@@ -128,7 +143,9 @@ def get_current_user(
     """
     try:
         payload = decode_token_payload(token)
-        return _load_user_from_payload(payload, db)
+        user = _load_user_from_payload(payload, db)
+        _enforce_demo_read_only(request, user)
+        return user
     except jwt.PyJWTError:
         raise _credentials_exception()
 
@@ -153,6 +170,7 @@ def get_current_user_optional(
 
 
 def get_current_admin(
+    request: Request,
     token: Annotated[str, Depends(oauth2_scheme)],
     db: Session = Depends(get_db),
 ) -> User:
@@ -163,7 +181,7 @@ def get_current_admin(
         HTTPException 401: Nếu token không hợp lệ.
         HTTPException 403: Nếu tài khoản bị khóa hoặc không phải Admin.
     """
-    user = get_current_user(token, db)
+    user = get_current_user(request, token, db)
     if user.role != 1:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -173,6 +191,7 @@ def get_current_admin(
 
 
 def get_current_shipper(
+    request: Request,
     token: Annotated[str, Depends(oauth2_scheme)],
     db: Session = Depends(get_db),
 ) -> User:
@@ -183,7 +202,7 @@ def get_current_shipper(
         HTTPException 401: Nếu token không hợp lệ.
         HTTPException 403: Nếu tài khoản bị khóa hoặc không có quyền shipper.
     """
-    user = get_current_user(token, db)
+    user = get_current_user(request, token, db)
     if user.role not in (1, 2):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

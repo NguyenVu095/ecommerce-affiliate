@@ -328,9 +328,13 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (res) => res,
   (err: unknown) => {
-    if (axios.isAxiosError(err) && (err.response?.status === 401 || err.response?.status === 403)) {
-      useAuthStore.getState().logout()
-      window.location.href = '/login'
+    if (axios.isAxiosError(err)) {
+      const detail = err.response?.data?.detail
+      const accountLocked = err.response?.status === 403 && detail === 'Your account has been locked or disabled.'
+      if (err.response?.status === 401 || accountLocked) {
+        useAuthStore.getState().logout()
+        window.location.href = '/login'
+      }
     }
     return Promise.reject(err)
   },

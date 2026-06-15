@@ -19,6 +19,17 @@ React/Vite riêng cho khách hàng, quản trị viên và đối tác affiliate
 > Render Free có thể ngủ sau 15 phút không có request. Lần truy cập đầu tiên
 > có thể mất khoảng một phút để backend khởi động.
 
+### Tài khoản dùng thử
+
+Các tài khoản công khai dưới đây ở chế độ **chỉ đọc**. Bạn có thể đăng nhập và
+xem dữ liệu dashboard nhưng không thể tạo, sửa, xóa hoặc thay đổi trạng thái dữ
+liệu.
+
+| Khu vực | Email | Mật khẩu |
+| --- | --- | --- |
+| Admin | `admin_demo@gmail.com` | `AdminDemo@2026` |
+| Affiliate | `affiliate_demo@gmail.com` | `AffiliateDemo@2026` |
+
 ## Tính năng
 
 - Danh mục sản phẩm nhiều cấp, tìm kiếm, lọc, sắp xếp và phân trang.
