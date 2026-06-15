@@ -22,14 +22,14 @@ React/Vite riêng cho khách hàng, quản trị viên và đối tác affiliate
 
 ### Tài khoản dùng thử
 
-Các tài khoản công khai dưới đây ở chế độ **chỉ đọc**. Bạn có thể đăng nhập và
-xem dữ liệu dashboard nhưng không thể tạo, sửa, xóa hoặc thay đổi trạng thái dữ
-liệu.
+| Khu vực | Email | Mật khẩu | Quyền |
+| --- | --- | --- | --- |
+| Admin | `admin_demo@gmail.com` | `AdminDemo@2026` | Chỉ đọc, không thể thay đổi dữ liệu |
+| Affiliate | `affiliate_demo@gmail.com` | `AffiliateDemo@2026` | Đầy đủ chức năng affiliate |
 
-| Khu vực | Email | Mật khẩu |
-| --- | --- | --- |
-| Admin | `admin_demo@gmail.com` | `AdminDemo@2026` |
-| Affiliate | `affiliate_demo@gmail.com` | `AffiliateDemo@2026` |
+Tài khoản Admin được giới hạn chỉ đọc để bảo vệ dữ liệu demo chung. Tài khoản
+Affiliate hoạt động như một tài khoản khách hàng/đối tác thông thường: có thể
+tạo và quản lý liên kết tiếp thị, theo dõi hoa hồng và gửi yêu cầu rút tiền.
 
 ## Tính năng
 

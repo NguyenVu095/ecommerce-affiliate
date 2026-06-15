@@ -40,9 +40,15 @@ class SecurityControlTests(unittest.TestCase):
         self.assertEqual(context.exception.status_code, 403)
         self.assertEqual(context.exception.detail, "Demo account is read-only.")
 
-    def test_regular_accounts_are_not_forced_read_only(self) -> None:
-        user = SimpleNamespace(email="admin@gmail.com")
-        _enforce_demo_read_only(MagicMock(method="DELETE"), user)
+    def test_regular_and_affiliate_accounts_are_not_forced_read_only(self) -> None:
+        _enforce_demo_read_only(
+            MagicMock(method="DELETE"),
+            SimpleNamespace(email="admin@gmail.com"),
+        )
+        _enforce_demo_read_only(
+            MagicMock(method="POST"),
+            SimpleNamespace(email="affiliate_demo@gmail.com"),
+        )
 
     def test_security_headers_allow_docs_assets_but_keep_api_csp_strict(self) -> None:
         app = Starlette(

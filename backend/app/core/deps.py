@@ -21,10 +21,7 @@ from app.modules.user.models import TokenBlocklist, User
 oauth2_scheme          = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 optional_oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
 _SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
-_READ_ONLY_DEMO_EMAILS = {
-    "admin_demo@gmail.com",
-    "affiliate_demo@gmail.com",
-}
+_READ_ONLY_DEMO_EMAILS = {"admin_demo@gmail.com"}
 
 
 def _credentials_exception() -> HTTPException:
@@ -121,7 +118,7 @@ def _load_user_from_payload(payload: dict[str, Any], db: Session) -> User:
 
 
 def _enforce_demo_read_only(request: Request, user: User) -> None:
-    """Block state changes made with the public demo accounts."""
+    """Block state changes made with the public read-only admin account."""
     if user.email.lower() in _READ_ONLY_DEMO_EMAILS and request.method.upper() not in _SAFE_METHODS:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
