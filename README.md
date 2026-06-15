@@ -85,11 +85,13 @@ Quy trình kiểm thử:
 
 1. Thêm sản phẩm vào giỏ và mở trang checkout.
 2. Chọn phương thức thanh toán VNPay.
-3. Tại cổng thanh toán Sandbox, chọn ngân hàng `NCB`.
-4. Nhập thông tin thẻ ở bảng trên.
-5. Nhập OTP `123456`.
-6. Sau khi thanh toán, VNPay chuyển về trang tra cứu đơn hàng.
-7. Kiểm tra trạng thái thanh toán trong Customer và Admin.
+3. Nhấn đặt hàng
+4. Tại cổng thanh toán Sandbox, chọn phương thức thanh toán "Thẻ nội địa và tài khoản ngân hàng"
+5. Chọn ngân hàng `NCB`.
+6. Nhập thông tin thẻ ở bảng trên.
+7. Nhập OTP `123456`.
+8. Sau khi thanh toán, VNPay chuyển về trang tra cứu đơn hàng.
+9. Kiểm tra trạng thái thanh toán trong Customer và Admin.
 
 ## Chạy local
 
