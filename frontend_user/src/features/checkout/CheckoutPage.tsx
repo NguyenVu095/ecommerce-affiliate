@@ -30,6 +30,7 @@ import {
   validateCoupon,
   type CouponItem,
 } from "../../services/couponService";
+import VnpayLogo from "../../components/VnpayLogo";
 
 // ─── Kiểu dữ liệu nội bộ ──────────────────────────────────────────────────────
 
@@ -767,8 +768,8 @@ export default function CheckoutPage() {
                       </div>
                     ),
                     vnpay: (
-                      <div className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center overflow-hidden p-1">
-                        <img src="https://vnpay.vn/s1/vnpay/asset/images/logo-vnpay.png" alt="VNPAY" className="object-contain w-full h-full" />
+                      <div className="w-12 h-10 bg-white border border-slate-100 rounded-lg flex items-center justify-center overflow-hidden p-1">
+                        <VnpayLogo className="w-full h-full" />
                       </div>
                     ),
                   };

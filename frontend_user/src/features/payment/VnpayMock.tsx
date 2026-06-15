@@ -14,6 +14,7 @@ import { useSearchParams, useNavigate } from "react-router-dom";
 import { useState } from "react";
 import api from "../../services/api";
 import { CheckCircle2, XCircle, AlertTriangle } from "lucide-react";
+import VnpayLogo from "../../components/VnpayLogo";
 
 export default function VnpayMock() {
   const [searchParams] = useSearchParams();
@@ -81,11 +82,7 @@ export default function VnpayMock() {
   return (
     <div className="max-w-md mx-auto mt-20 p-8 bg-white rounded-3xl shadow-xl border border-slate-100">
       <div className="text-center mb-8">
-        <img
-          src="https://vnpay.vn/s1/vnpay/assets/images/logo-vnpay.svg"
-          alt="VNPAY"
-          className="h-10 mx-auto mb-4"
-        />
+        <VnpayLogo className="h-10 w-auto mx-auto mb-4" />
         <h1 className="text-xl font-bold text-slate-800">Cổng Thanh Toán Giả Lập</h1>
       </div>
 
