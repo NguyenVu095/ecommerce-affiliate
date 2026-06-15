@@ -169,12 +169,12 @@ export function LookbookPage() {
     {
       title: "Office Minimal",
       image: "https://images.unsplash.com/photo-1529139574466-a303027c1d8b?q=80&w=900&auto=format&fit=crop",
-      category: "/category/ao-thun",
+      category: "/category/ao-thun-nam",
     },
     {
       title: "Street Weekend",
       image: "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?q=80&w=900&auto=format&fit=crop",
-      category: "/category/quan-jean",
+      category: "/category/jean-nam",
     },
     {
       title: "Clean Accessories",

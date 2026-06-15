@@ -54,7 +54,7 @@ const HERO_SLIDES = [
     tag: "Phong Cách Đường Phố",
     titleLines: ["Streetwear", "Vibes"],
     description: "Thể hiện cá tính mạnh mẽ với những set đồ bụi bặm, phá cách dành riêng cho giới trẻ năng động. Mix & Match không giới hạn.",
-    link: "/category/ao-khoac"
+    link: "/category/ao-khoac-nam"
   },
   {
     id: 4,
@@ -157,7 +157,7 @@ export default function ProductList() {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
           {/* Áo Thun */}
-          <Link to="/category/ao-thun" className="group relative aspect-square overflow-hidden rounded-2xl bg-slate-100 block">
+          <Link to="/category/ao-thun-nam" className="group relative aspect-square overflow-hidden rounded-2xl bg-slate-100 block">
             <img src="https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?q=80&w=800&auto=format&fit=crop" alt="Áo thun" loading="lazy" decoding="async" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
             <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 transition-colors"></div>
             <div className="absolute bottom-6 left-6 right-6">
@@ -167,7 +167,7 @@ export default function ProductList() {
           </Link>
 
           {/* Quần Jean */}
-          <Link to="/category/quan-jean" className="group relative aspect-square overflow-hidden rounded-2xl bg-slate-100 block">
+          <Link to="/category/jean-nam" className="group relative aspect-square overflow-hidden rounded-2xl bg-slate-100 block">
             <img src="https://images.unsplash.com/photo-1541099649105-f69ad21f3246?q=80&w=800&auto=format&fit=crop" alt="Quần Jean" loading="lazy" decoding="async" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
             <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 transition-colors"></div>
             <div className="absolute bottom-6 left-6 right-6">
@@ -187,7 +187,7 @@ export default function ProductList() {
           </Link>
 
           {/* Giày */}
-          <Link to="/category/giay" className="group relative aspect-square overflow-hidden rounded-2xl bg-slate-100 block">
+          <Link to="/category/giay-nam" className="group relative aspect-square overflow-hidden rounded-2xl bg-slate-100 block">
             <img src="https://images.unsplash.com/photo-1491553895911-0055eca6402d?q=80&w=800&auto=format&fit=crop" alt="Giày" loading="lazy" decoding="async" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
             <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 transition-colors"></div>
             <div className="absolute bottom-6 left-6 right-6">
