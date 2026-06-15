@@ -11,6 +11,7 @@ React/Vite riêng cho khách hàng, quản trị viên và đối tác affiliate
 | Dịch vụ | URL |
 | --- | --- |
 | Khách hàng | [ecommerce-affiliate-customer.vercel.app](https://ecommerce-affiliate-customer.vercel.app) |
+| Tiếp thị liên kết | [ecommerce-affiliate-partner-beta.vercel.app](https://ecommerce-affiliate-partner-beta.vercel.app) |
 | Quản trị | [ecommerce-affiliate-admin.vercel.app](https://ecommerce-affiliate-admin.vercel.app) |
 | API | [ecommerce-affiliate-api.onrender.com](https://ecommerce-affiliate-api.onrender.com) |
 | Tài liệu API | [Swagger UI](https://ecommerce-affiliate-api.onrender.com/docs) |
