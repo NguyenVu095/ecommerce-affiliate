@@ -1,0 +1,493 @@
+# Ecommerce Affiliate - Tài liệu Sơ đồ Cơ sở Dữ liệu (Database Schema)
+
+Tài liệu này liệt kê chi tiết toàn bộ các bảng, thuộc tính (attributes), chỉ mục (indexes), và mối quan hệ (relationships) trong cơ sở dữ liệu của dự án **ecommerce-affiliate**. Sơ đồ được tổng hợp trực tiếp từ các SQLAlchemy Models trong thư mục `backend/app/modules`.
+
+---
+
+## 1. Sơ đồ Quan hệ Thực thể (ERD Diagram)
+
+```mermaid
+erDiagram
+    users ||--o{ user_addresses : "has"
+    users ||--o{ token_blocklist : "manages"
+    users ||--o{ orders : "places"
+    users ||--o{ order_status_history : "updates"
+    users ||--o{ affiliate_clicks : "refers"
+    users ||--o{ affiliate_links : "creates"
+    users ||--o{ affiliate_commissions : "earns"
+    users ||--o{ withdrawal_requests : "requests"
+    users ||--o{ chat_sessions : "has"
+    users ||--o| users : "referred_by"
+    
+    categories ||--o{ products : "contains"
+    categories ||--o{ categories : "parent_of"
+    
+    products ||--o{ product_variants : "has"
+    products ||--o{ product_reviews : "has"
+    products ||--o{ affiliate_links : "used_in"
+    
+    orders ||--|{ order_items : "contains"
+    orders ||--o{ order_status_history : "logs"
+    orders ||--o{ payment_transactions : "has"
+    orders ||--o{ payment_refunds : "has"
+    orders ||--o{ payment_gateway_events : "logs"
+    orders ||--o{ coupon_usages : "uses"
+    orders ||--o{ affiliate_commissions : "generates"
+    
+    order_items ||--o| product_reviews : "reviewed_by"
+    
+    product_variants ||--o{ order_items : "ordered_in"
+    
+    coupons ||--o{ coupon_usages : "tracked_by"
+    
+    payment_transactions ||--o{ payment_refunds : "refunded_by"
+    payment_transactions ||--o{ payment_gateway_events : "associated_with"
+    payment_refunds ||--o{ payment_gateway_events : "associated_with"
+    
+    chat_sessions ||--|{ chat_messages : "contains"
+    
+    affiliate_links ||--o{ affiliate_clicks : "clicked"
+    affiliate_links ||--o{ affiliate_commissions : "attributed_to"
+    
+    affiliate_commissions ||--o| affiliate_conversions : "triggers"
+```
+
+---
+
+## 2. Danh sách các Bảng & Chi tiết Thuộc tính
+
+### 2.1. Phân hệ Người dùng (User Module)
+
+#### Bảng `users` (Quản lý tài khoản)
+*Lưu thông tin tài khoản admin, affiliate, khách hàng và shipper.*
+
+| Thuộc tính | Kiểu dữ liệu | Ràng buộc | Mô tả |
+| :--- | :--- | :--- | :--- |
+| `id` | Integer | PK, Auto | ID tự tăng |
+| `full_name` | String(255) | Index, Not Null | Họ và tên (Mặc định: "No Name") |
+| `email` | String(255) | Unique, Index, Not Null | Địa chỉ Email |
+| `password` | String(255) | Nullable | Mật khẩu băm (Null nếu login Google) |
+| `google_id` | String(255) | Unique, Index, Nullable | ID đăng nhập bằng Google |
+| `auth_provider` | String(50) | Index, Default: "local" | Nguồn đăng nhập (local, google) |
+| `phone` | String(20) | Unique, Index, Nullable | Số điện thoại |
+| `avatar` | String(255) | Nullable | Link ảnh đại diện |
+| `role` | SmallInteger | Index, Default: 0 | Quyền: `0`: User/Customer, `1`: Affiliate, `2`: Shipper, `9`: Admin |
+| `status` | SmallInteger | Index, Default: 1 | Trạng thái: `1`: Hoạt động, `0`: Khóa |
+| `token_version` | Integer | Default: 0 | Phiên bản token (dùng để thu hồi token cũ) |
+| `password_changed_at`| DateTime | Nullable | Thời gian đổi mật khẩu cuối |
+| `referral_code` | String(20) | Unique, Index, Nullable | Mã giới thiệu tiếp thị của User |
+| `referred_by_id` | Integer | FK -> `users.id`, Null | ID người giới thiệu |
+| `created_at` | DateTime | Index, Default: func.now() | Thời gian tạo tài khoản |
+| `updated_at` | DateTime | Default: func.now() | Thời gian cập nhật tài khoản |
+
+#### Bảng `user_addresses` (Địa chỉ giao hàng của User)
+*Lưu trữ sổ địa chỉ của người dùng để mua hàng.*
+
+| Thuộc tính | Kiểu dữ liệu | Ràng buộc | Mô tả |
+| :--- | :--- | :--- | :--- |
+| `id` | Integer | PK, Auto | ID tự tăng |
+| `user_id` | Integer | FK -> `users.id`, Index | Thuộc về User nào |
+| `receiver_name` | String(255) | Not Null | Tên người nhận hàng |
+| `receiver_phone` | String(20) | Not Null | Số điện thoại người nhận |
+| `province_id` | Integer | Not Null | ID Tỉnh/Thành (theo hệ thống GHN) |
+| `district_id` | Integer | Not Null | ID Quận/Huyện (theo hệ thống GHN) |
+| `ward_id` | String(50) | Not Null | Mã Phường/Xã (theo hệ thống GHN) |
+| `address_detail` | String(255) | Not Null | Địa chỉ chi tiết (Số nhà, đường...) |
+| `is_default` | Boolean | Default: False | Địa chỉ mặc định |
+
+*   **Chỉ mục phụ**: `ix_user_addresses_user_default` (`user_id`, `is_default`) - Tối ưu truy vấn địa chỉ mặc định của user.
+
+#### Bảng `token_blocklist` (Thu hồi JWT Token)
+*Lưu các refresh token hoặc access token đã bị đăng xuất/hủy bỏ.*
+
+| Thuộc tính | Kiểu dữ liệu | Ràng buộc | Mô tả |
+| :--- | :--- | :--- | :--- |
+| `id` | Integer | PK, Auto | ID tự tăng |
+| `jti` | String(64) | Unique, Index, Not Null | ID duy nhất của JWT token |
+| `user_id` | Integer | FK -> `users.id`, Index, Not Null | User sở hữu token |
+| `expires_at` | DateTime | Index, Not Null | Thời gian token hết hạn |
+| `revoked_at` | DateTime | Default: func.now() | Thời gian thu hồi token |
+| `reason` | String(50) | Nullable | Lý do thu hồi (logout, password_change...) |
+
+---
+
+### 2.2. Phân hệ Danh mục & Sản phẩm (Category & Product Module)
+
+#### Bảng `categories` (Danh mục sản phẩm)
+*Quản lý danh mục đa cấp (chứa danh mục cha - con).*
+
+| Thuộc tính | Kiểu dữ liệu | Ràng buộc | Mô tả |
+| :--- | :--- | :--- | :--- |
+| `id` | Integer | PK, Auto | ID tự tăng |
+| `name` | String(100) | Not Null | Tên danh mục |
+| `parent_id` | Integer | FK -> `categories.id`, Null | ID danh mục cha (Null nếu là cấp cao nhất) |
+| `slug` | String(100) | Unique, Index, Not Null | Đường dẫn tĩnh thân thiện (URL Slug) |
+| `status` | SmallInteger | Index, Default: 1 | Trạng thái hiển thị: `1`: Hiện trên Menu, `0`: Ẩn |
+| `created_at` | DateTime | Default: func.now() | Thời gian tạo |
+| `updated_at` | DateTime | Default: func.now() | Thời gian cập nhật |
+
+#### Bảng `products` (Thông tin sản phẩm chính)
+*Lưu thông tin chung của sản phẩm.*
+
+| Thuộc tính | Kiểu dữ liệu | Ràng buộc | Mô tả |
+| :--- | :--- | :--- | :--- |
+| `id` | Integer | PK, Auto | ID tự tăng |
+| `name` | String(255) | Index, Not Null | Tên sản phẩm |
+| `slug` | String(100) | Unique, Index, Not Null | Đường dẫn tĩnh (Slug) |
+| `category_id` | Integer | FK -> `categories.id`, Index | Thuộc danh mục nào |
+| `description` | Text | Nullable | Mô tả chi tiết sản phẩm |
+| `base_price` | Numeric(12,2) | Index, Not Null | Giá cơ sở của sản phẩm |
+| `commission_rate`| Numeric(5,2) | Default: 10.00 | Phần trăm hoa hồng mặc định cho Affiliate (mặc định 10%) |
+| `thumbnail` | String(255) | Nullable | Đường dẫn ảnh đại diện sản phẩm |
+| `gender` | SmallInteger | Index, Default: 2 | Giới tính phù hợp: `0`: Nam, `1`: Nữ, `2`: Unisex |
+| `status` | SmallInteger | Index, Default: 1 | Trạng thái: `1`: Đang bán, `0`: Ngừng bán |
+| `created_at` | DateTime | Index, Default: func.now() | Thời gian tạo |
+| `updated_at` | DateTime | Default: func.now() | Thời gian cập nhật |
+| `deleted_at` | DateTime | Index, Nullable | Thời gian xóa mềm (Soft Delete) |
+
+#### Bảng `product_variants` (Biến thể sản phẩm)
+*Lưu thông tin kích thước, màu sắc, giá bán, số lượng trong kho của từng biến thể sản phẩm.*
+
+| Thuộc tính | Kiểu dữ liệu | Ràng buộc | Mô tả |
+| :--- | :--- | :--- | :--- |
+| `id` | Integer | PK, Auto | ID tự tăng |
+| `product_id` | Integer | FK -> `products.id`, Index, Not Null | ID sản phẩm chính |
+| `sku` | String(100) | Unique, Index, Nullable | Mã định danh quản lý kho hàng (Stock Keeping Unit) |
+| `attributes` | JSON | Nullable | Các thuộc tính biến thể (ví dụ: `{"color": "Red", "size": "M"}`) |
+| `price` | Numeric(12,2) | Index, Not Null | Giá gốc của biến thể |
+| `sale_price` | Numeric(12,2) | Index, Nullable | Giá khuyến mãi (nếu có) |
+| `stock` | Integer | Index, Default: 0 | Số lượng tồn kho |
+| `image_url` | String(255) | Nullable | Ảnh riêng của biến thể |
+| `weight` | Integer | Default: 0 | Khối lượng (gram) - phục vụ tính phí ship |
+| `length` | Integer | Default: 0 | Chiều dài (cm) |
+| `width` | Integer | Default: 0 | Chiều rộng (cm) |
+| `height` | Integer | Default: 0 | Chiều cao (cm) |
+| `status` | SmallInteger | Index, Default: 1 | Trạng thái biến thể: `1`: Hoạt động, `0`: Ngừng bán |
+| `created_at` | DateTime | Default: func.now() | Thời gian tạo |
+| `updated_at` | DateTime | Default: func.now() | Thời gian cập nhật |
+
+#### Bảng `product_reviews` (Đánh giá sản phẩm)
+*Lưu các review của người dùng sau khi mua hàng.*
+
+| Thuộc tính | Kiểu dữ liệu | Ràng buộc | Mô tả |
+| :--- | :--- | :--- | :--- |
+| `id` | Integer | PK, Auto | ID tự tăng |
+| `user_id` | Integer | FK -> `users.id`, Index, Not Null | Người đánh giá |
+| `product_id` | Integer | FK -> `products.id`, Index, Not Null | Sản phẩm được đánh giá |
+| `order_item_id` | Integer | FK -> `order_items.id`, Unique, Not Null | Đánh giá dựa trên chi tiết đơn hàng nào |
+| `rating` | SmallInteger | Index, Not Null | Số sao (1 đến 5) |
+| `comment` | Text | Nullable | Bình luận chi tiết |
+| `images` | JSON | Nullable | Mảng ảnh đi kèm review |
+| `status` | Enum | Index, Default: 'pending' | Trạng thái kiểm duyệt: `pending`, `approved`, `hidden` |
+
+*   **Ràng buộc duy nhất**: `UniqueConstraint('user_id', 'product_id', 'order_item_id')` - Đảm bảo mỗi mặt hàng trong đơn hàng chỉ được đánh giá 1 lần.
+
+---
+
+### 2.3. Phân hệ Đơn hàng & Thanh toán (Order & Payment Module)
+
+#### Bảng `shipping_methods` (Phương thức giao hàng)
+*Cấu hình các hãng vận chuyển (ví dụ: Giao Hàng Nhanh).*
+
+| Thuộc tính | Kiểu dữ liệu | Ràng buộc | Mô tả |
+| :--- | :--- | :--- | :--- |
+| `id` | Integer | PK, Auto | ID tự tăng |
+| `name` | String(100) | Not Null | Tên phương thức/hãng vận chuyển |
+| `cost` | Decimal(15,2)| Default: 0.00 | Phí vận chuyển cố định mặc định |
+| `estimated_delivery`| String(100) | Nullable | Thời gian giao hàng dự kiến |
+| `status` | SmallInteger | Index, Default: 1 | Trạng thái đối tác: `1`: Đang hợp tác, `0`: Ngừng |
+| `service_id` | Integer | Nullable | ID dịch vụ của hãng (ví dụ GHN service_id) |
+| `service_type_id` | Integer | Nullable | Loại dịch vụ của hãng |
+
+#### Bảng `payment_methods` (Phương thức thanh toán)
+*Cấu hình các cổng hoặc hình thức thanh toán.*
+
+| Thuộc tính | Kiểu dữ liệu | Ràng buộc | Mô tả |
+| :--- | :--- | :--- | :--- |
+| `id` | Integer | PK, Auto | ID tự tăng |
+| `name` | String(100) | Not Null | Tên hiển thị phương thức thanh toán |
+| `code` | String(50) | Unique, Index, Not Null | Mã code định danh (COD, VNPAY...) |
+| `description` | Text | Nullable | Mô tả phương thức |
+| `status` | SmallInteger | Index, Default: 1 | Trạng thái: `1`: Kích hoạt, `0`: Ẩn |
+
+#### Bảng `orders` (Quản lý Đơn hàng)
+*Bảng trung tâm lưu thông tin đơn đặt hàng.*
+
+| Thuộc tính | Kiểu dữ liệu | Ràng buộc | Mô tả |
+| :--- | :--- | :--- | :--- |
+| `id` | Integer | PK, Auto | ID tự tăng |
+| `order_code` | String(50) | Unique, Index, Not Null | Mã đơn hàng hiển thị (ví dụ: HD10002) |
+| `user_id` | Integer | FK -> `users.id`, Index, Nullable | ID người mua (Null nếu là khách vãng lai) |
+| `shipping_method_id`| Integer | FK -> `shipping_methods.id`, Not Null| Hình thức giao hàng |
+| `payment_method_id` | Integer | FK -> `payment_methods.id`, Not Null | Hình thức thanh toán |
+| `coupon_id` | Integer | FK -> `coupons.id`, Index, Nullable | ID mã giảm giá áp dụng |
+| `coupon_code` | String(50) | Index, Nullable | Lưu lại mã giảm giá tại thời điểm mua |
+| `receiver_name` | String(255) | Nullable | Tên người nhận hàng |
+| `receiver_phone` | String(20) | Nullable | Số điện thoại người nhận hàng |
+| `receiver_email` | String(255) | Nullable | Email người nhận hàng |
+| `status` | Enum | Index, Default: "pending" | Trạng thái: `pending`, `confirmed`, `shipping`, `success`, `cancelled` |
+| `payment_status` | Enum | Index, Default: "unpaid" | Trạng thái thanh toán: `unpaid`, `paid`, `refunded` |
+| `total_base_price` | Decimal(15,2)| Not Null | Tổng tiền sản phẩm trước khi ship & giảm giá |
+| `shipping_fee` | Decimal(15,2)| Not Null | Phí vận chuyển |
+| `discount_amount` | Decimal(15,2)| Default: 0.00 | Số tiền được giảm giá |
+| `total_final` | Decimal(15,2)| Index, Not Null | Tổng số tiền thanh toán cuối cùng |
+| `shipping_full_address`| Text | Not Null | Địa chỉ giao hàng đầy đủ dạng chữ |
+| `to_district_id` | Integer | Nullable | ID Quận/Huyện đích nhận hàng (đồng bộ GHN) |
+| `to_ward_code` | String(20) | Nullable | Mã Phường/Xã đích nhận hàng (đồng bộ GHN) |
+| `note` | Text | Nullable | Ghi chú của khách hàng khi mua |
+| `shipping_order_code`| String(50) | Unique, Index, Nullable | Mã vận đơn của hãng ship (ví dụ mã của GHN) |
+| `ghn_status` | String(50) | Index, Nullable | Trạng thái vận chuyển đồng bộ từ hãng ship |
+| `expected_delivery_time`| DateTime| Index, Nullable | Thời điểm dự kiến giao hàng xong |
+| `created_at` | DateTime | Index, Default: func.now() | Thời điểm đặt hàng |
+| `updated_at` | DateTime | Default: func.now() | Thời điểm cập nhật cuối |
+
+#### Bảng `order_items` (Chi tiết mặt hàng trong đơn hàng)
+*Lưu chi tiết các sản phẩm được đặt mua.*
+
+| Thuộc tính | Kiểu dữ liệu | Ràng buộc | Mô tả |
+| :--- | :--- | :--- | :--- |
+| `id` | Integer | PK, Auto | ID tự tăng |
+| `order_id` | Integer | FK -> `orders.id`, Index | Thuộc đơn hàng nào |
+| `variant_id` | Integer | FK -> `product_variants.id`, Index | ID biến thể sản phẩm |
+| `quantity` | Integer | Not Null | Số lượng mua |
+| `price` | Decimal(15,2)| Not Null | Đơn giá sản phẩm tại thời điểm mua |
+| `sku` | String(100) | Index, Nullable | Mã SKU sản phẩm tại thời điểm mua |
+
+#### Bảng `order_status_history` (Lịch sử trạng thái đơn hàng)
+*Ghi log mỗi lần đơn hàng chuyển trạng thái để theo dõi hành trình đơn.*
+
+| Thuộc tính | Kiểu dữ liệu | Ràng buộc | Mô tả |
+| :--- | :--- | :--- | :--- |
+| `id` | Integer | PK, Auto | ID tự tăng |
+| `order_id` | Integer | FK -> `orders.id`, Index | ID đơn hàng |
+| `status` | String(50) | Index, Not Null | Trạng thái chuyển dịch sang |
+| `note` | Text | Nullable | Ghi chú/Lý do thay đổi trạng thái |
+| `changed_by` | Integer | FK -> `users.id`, Index, Nullable | ID người cập nhật (Admin/User/Hãng ship/Null) |
+| `created_at` | DateTime | Index, Default: func.now() | Thời gian cập nhật trạng thái |
+
+#### Bảng `payment_transactions` (Giao dịch thanh toán trực tuyến)
+*Lưu thông tin giao dịch thanh toán qua các cổng như VNPAY.*
+
+| Thuộc tính | Kiểu dữ liệu | Ràng buộc | Mô tả |
+| :--- | :--- | :--- | :--- |
+| `id` | Integer | PK, Auto | ID tự tăng |
+| `order_id` | Integer | FK -> `orders.id`, Index, Not Null | Đơn hàng thanh toán |
+| `provider` | String(32) | Index, Default: "VNPAY" | Cổng thanh toán |
+| `txn_ref` | String(100) | Unique, Index, Not Null | Mã tham chiếu giao dịch nội bộ gửi sang cổng |
+| `amount` | Decimal(15,2)| Not Null | Số tiền thanh toán |
+| `currency` | String(3) | Default: "VND" | Đơn vị tiền tệ |
+| `status` | String(32) | Index, Default: "pending" | Trạng thái GD (`pending`, `success`, `failed`...) |
+| `payment_create_date`| String(14) | Not Null | Thời gian tạo giao dịch dạng chuỗi (YmdHMS) |
+| `payment_expire_date`| String(14) | Not Null | Thời gian hết hạn giao dịch dạng chuỗi |
+| `client_ip` | String(45) | Not Null | IP của thiết bị khách hàng tạo giao dịch |
+| `gateway_transaction_no`| String(32)| Unique, Index, Nullable| Mã giao dịch trả về từ cổng thanh toán |
+| `response_code` | String(10) | Nullable | Mã phản hồi từ cổng (ví dụ: "00") |
+| `transaction_status` | String(10) | Nullable | Trạng thái chi tiết từ cổng |
+| `bank_code` | String(32) | Nullable | Mã ngân hàng khách hàng dùng thanh toán |
+| `card_type` | String(32) | Nullable | Loại thẻ thanh toán (ATM, Visa...) |
+| `pay_date` | DateTime | Nullable | Thời gian thanh toán thành công thực tế |
+| `raw_response` | JSON | Nullable | Toàn bộ payload JSON trả về từ Gateway |
+| `confirmed_at` | DateTime | Nullable | Thời gian hệ thống xác nhận tiền đã vào tài khoản |
+| `last_reconciled_at`| DateTime | Nullable | Thời gian đối soát giao dịch cuối cùng |
+| `created_at` | DateTime | Index | Thời gian tạo bản ghi |
+| `updated_at` | DateTime | | Thời gian cập nhật bản ghi |
+
+#### Bảng `payment_refunds` (Hoàn tiền giao dịch)
+*Lưu vết các yêu cầu hoàn tiền cho các giao dịch online.*
+
+| Thuộc tính | Kiểu dữ liệu | Ràng buộc | Mô tả |
+| :--- | :--- | :--- | :--- |
+| `id` | Integer | PK, Auto | ID tự tăng |
+| `payment_transaction_id`| Integer| FK -> `payment_transactions.id` | Hoàn tiền cho giao dịch gốc nào |
+| `order_id` | Integer | FK -> `orders.id`, Index, Not Null | Hoàn tiền cho đơn hàng nào |
+| `request_id` | String(100) | Unique, Index, Not Null | Mã tham chiếu yêu cầu hoàn tiền gửi sang cổng |
+| `amount` | Decimal(15,2)| Not Null | Số tiền hoàn |
+| `status` | String(32) | Index, Default: "pending" | Trạng thái yêu cầu (`pending`, `success`, `failed`) |
+| `reason` | Text | Not Null | Lý do hoàn tiền |
+| `requested_by` | Integer | FK -> `users.id`, Index, Not Null | ID Admin/User yêu cầu hoàn tiền |
+| `gateway_response_id`| String(100)| Nullable | Mã phản hồi của Gateway |
+| `gateway_transaction_no`| String(32)| Index, Nullable | Mã giao dịch hoàn trả của Gateway |
+| `response_code` | String(10) | Nullable | Mã kết quả Gateway trả về |
+| `transaction_status`| String(10) | Nullable | Trạng thái GD hoàn tại Gateway |
+| `raw_response` | JSON | Nullable | Chi tiết phản hồi thô từ cổng thanh toán |
+| `completed_at` | DateTime | Nullable | Thời điểm hoàn tiền thành công |
+
+#### Bảng `payment_gateway_events` (Nhật ký webhook từ cổng thanh toán)
+*Lưu lại tất cả các callback/IPN gọi từ cổng thanh toán về hệ thống.*
+
+| Thuộc tính | Kiểu dữ liệu | Ràng buộc | Mô tả |
+| :--- | :--- | :--- | :--- |
+| `id` | Integer | PK, Auto | ID tự tăng |
+| `order_id` | Integer | FK -> `orders.id`, Index, Not Null | Đơn hàng liên quan |
+| `payment_transaction_id`| Integer| FK -> `payment_transactions.id`, Null | Giao dịch liên quan |
+| `payment_refund_id` | Integer | FK -> `payment_refunds.id`, Nullable | Lịch sử hoàn tiền liên quan |
+| `event_type` | String(32) | Index, Not Null | Loại sự kiện (ví dụ: `ipn_payment`, `ipn_refund`) |
+| `request_id` | String(100) | Index, Nullable | Mã request gửi kèm |
+| `signature_valid` | Boolean | Nullable | Trạng thái kiểm tra chữ ký số có hợp lệ không |
+| `response_code` | String(10) | Nullable | Mã phản hồi hệ thống phản hồi lại Gateway |
+| `payload` | JSON | Nullable | Toàn bộ dữ liệu callback nhận được |
+| `created_at` | DateTime | Index | Thời điểm nhận sự kiện |
+
+---
+
+### 2.4. Phân hệ Khuyến mại (Coupon Module)
+
+#### Bảng `coupons` (Mã giảm giá/Khuyến mại)
+*Lưu cấu hình các mã giảm giá.*
+
+| Thuộc tính | Kiểu dữ liệu | Ràng buộc | Mô tả |
+| :--- | :--- | :--- | :--- |
+| `id` | Integer | PK, Auto | ID tự tăng |
+| `code` | String(50) | Unique, Index, Not Null | Mã giảm giá viết hoa (ví dụ: KM50K) |
+| `type` | Enum | Not Null | Loại giảm giá: `percent` (phần trăm), `fixed` (tiền mặt) |
+| `value` | Numeric(12,2) | Not Null | Giá trị giảm |
+| `max_discount` | Numeric(12,2) | Nullable | Số tiền giảm tối đa (nếu là kiểu `percent`) |
+| `min_order` | Numeric(12,2) | Default: 0 | Giá trị đơn đặt hàng tối thiểu để được áp dụng |
+| `quantity` | Integer | Default: 0 | Tổng số lượt mã có thể sử dụng toàn hệ thống |
+| `max_uses_per_user`| Integer | Default: 1 | Số lần tối đa 1 user được phép dùng mã này |
+| `applicable_type` | Enum | Index, Default: 'all' | Phạm vi áp dụng: `all` (cả sàn), `category` (theo danh mục), `product` (theo sản phẩm) |
+| `start_at` | DateTime | Index, Nullable | Thời điểm bắt đầu có hiệu lực |
+| `expired_at` | DateTime | Index, Nullable | Thời điểm hết hạn mã |
+| `status` | SmallInteger | Index, Default: 1 | Trạng thái: `1`: Đang kích hoạt, `0`: Tạm khóa |
+| `created_at` | DateTime | Default: func.now() | Ngày tạo |
+| `updated_at` | DateTime | Default: func.now() | Ngày cập nhật cuối |
+
+#### Bảng `coupon_usages` (Nhật ký dùng mã giảm giá)
+*Ghi nhận việc người dùng sử dụng mã giảm giá thành công cho đơn hàng.*
+
+| Thuộc tính | Kiểu dữ liệu | Ràng buộc | Mô tả |
+| :--- | :--- | :--- | :--- |
+| `id` | Integer | PK, Auto | ID tự tăng |
+| `coupon_id` | Integer | FK -> `coupons.id`, Index, Not Null | ID mã giảm giá |
+| `user_id` | Integer | FK -> `users.id`, Index, Nullable | ID user sử dụng |
+| `order_id` | Integer | FK -> `orders.id`, Unique, Index, Not Null| Đơn hàng áp dụng mã |
+| `used_at` | DateTime | Index, Default: func.now() | Thời điểm áp dụng |
+
+---
+
+### 2.5. Phân hệ Tiếp thị liên kết (Affiliate Module)
+
+#### Bảng `affiliate_links` (Quản lý Link tiếp thị liên kết)
+*Lưu các link do cộng tác viên (Affiliate) tự tạo cho từng sản phẩm.*
+
+| Thuộc tính | Kiểu dữ liệu | Ràng buộc | Mô tả |
+| :--- | :--- | :--- | :--- |
+| `id` | Integer | PK, Auto | ID tự tăng |
+| `user_id` | Integer | FK -> `users.id`, Index, Not Null | ID cộng tác viên (Affiliate) sở hữu link |
+| `product_id` | Integer | FK -> `products.id`, Index, Not Null | ID sản phẩm được tiếp thị |
+| `campaign_name` | String(255) | Not Null | Tên chiến dịch tiếp thị do Affiliate tự đặt |
+| `channel` | String(50) | Index, Default: "direct" | Kênh phân phối (facebook, tiktok, direct...) |
+| `status` | Enum | Index, Default: 'active' | Trạng thái link: `active`, `paused` |
+| `created_at` | DateTime | Index, Default: func.now() | Thời gian tạo |
+| `updated_at` | DateTime | Default: func.now() | Thời gian cập nhật |
+
+#### Bảng `affiliate_clicks` (Nhật ký Click Link tiếp thị)
+*Ghi log mỗi khi người mua click vào link tiếp thị liên kết của Affiliate.*
+
+| Thuộc tính | Kiểu dữ liệu | Ràng buộc | Mô tả |
+| :--- | :--- | :--- | :--- |
+| `id` | Integer | PK, Auto | ID tự tăng |
+| `referrer_user_id` | Integer | FK -> `users.id`, Index, Not Null | ID cộng tác viên giới thiệu |
+| `affiliate_link_id`| Integer | FK -> `affiliate_links.id`, Index | Link tiếp thị được click (nếu có) |
+| `referral_code` | String(20) | Index, Not Null | Mã referral tương ứng |
+| `ip_address` | String(45) | Index, Nullable | Địa chỉ IP của người click |
+| `user_agent` | Text | Nullable | Trình duyệt/Thiết bị của người click |
+| `landing_url` | Text | Nullable | URL đích mà người click chuyển hướng tới |
+| `created_at` | DateTime | Index, Default: func.now() | Thời gian click |
+
+#### Bảng `affiliate_commissions` (Quản lý Hoa hồng)
+*Lưu số tiền hoa hồng được tính toán cho Affiliate từ các đơn hàng thành công.*
+
+| Thuộc tính | Kiểu dữ liệu | Ràng buộc | Mô tả |
+| :--- | :--- | :--- | :--- |
+| `id` | Integer | PK, Auto | ID tự tăng |
+| `order_id` | Integer | FK -> `orders.id`, Unique, Index, Not Null| Đơn hàng mang về hoa hồng |
+| `user_id` | Integer | FK -> `users.id`, Index, Not Null | ID cộng tác viên được nhận hoa hồng |
+| `affiliate_link_id`| Integer | FK -> `affiliate_links.id`, Index | Link tiếp thị mang lại đơn hàng |
+| `order_total` | Decimal(15,2)| Not Null | Giá trị đơn hàng tại thời điểm tính hoa hồng |
+| `commission_rate`| Decimal(5,2) | Not Null | Tỷ lệ phần trăm hoa hồng được hưởng |
+| `amount` | Decimal(15,2)| Not Null | Số tiền hoa hồng nhận được (VNĐ) |
+| `status` | Enum | Index, Default: 'pending' | Trạng thái duyệt hoa hồng: `pending`, `approved`, `paid`, `cancelled` |
+| `note` | Text | Nullable | Ghi chú lý do (hủy đơn, hoàn đơn...) |
+| `created_at` | DateTime | Index, Default: func.now() | Thời điểm ghi nhận hoa hồng |
+| `approved_at` | DateTime | Index, Nullable | Thời điểm admin duyệt hoa hồng |
+| `paid_at` | DateTime | Index, Nullable | Thời điểm thanh toán tiền hoa hồng |
+
+#### Bảng `affiliate_conversions` (Chuyển đổi mua hàng)
+*Sổ cái ghi nhận chuyển đổi tiếp thị liên kết (Attribution Ledger) giúp quản trị phân bổ.*
+
+| Thuộc tính | Kiểu dữ liệu | Ràng buộc | Mô tả |
+| :--- | :--- | :--- | :--- |
+| `id` | Integer | PK, Auto | ID tự tăng |
+| `order_id` | Integer | FK -> `orders.id`, Unique, Index, Not Null| Đơn hàng chuyển đổi |
+| `referrer_user_id` | Integer | FK -> `users.id`, Index, Not Null | ID cộng tác viên được hưởng |
+| `referred_user_id` | Integer | FK -> `users.id`, Index, Nullable | ID người mua hàng được giới thiệu (nếu có tài khoản) |
+| `commission_id` | Integer | FK -> `affiliate_commissions.id`, Unique | Bản ghi hoa hồng liên kết |
+| `attribution_type` | Enum | Index, Default: 'cookie' | Cơ chế ghi nhận: `cookie` (theo cookie trình duyệt), `code` (nhập mã giới thiệu trực tiếp), `manual` (duyệt tay) |
+| `created_at` | DateTime | Index, Default: func.now() | Thời điểm ghi nhận |
+
+#### Bảng `withdrawal_requests` (Yêu cầu rút tiền)
+*Lưu các yêu cầu yêu cầu rút tiền hoa hồng tích lũy của Affiliate.*
+
+| Thuộc tính | Kiểu dữ liệu | Ràng buộc | Mô tả |
+| :--- | :--- | :--- | :--- |
+| `id` | Integer | PK, Auto | ID tự tăng |
+| `user_id` | Integer | FK -> `users.id`, Index, Not Null | Cộng tác viên yêu cầu rút tiền |
+| `amount` | Decimal(15,2)| Not Null | Số tiền muốn rút |
+| `status` | Enum | Index, Default: 'pending' | Trạng thái yêu cầu: `pending` (chờ duyệt), `approved` (đã duyệt), `rejected` (bị từ chối), `paid` (đã chuyển tiền) |
+| `bank_name` | String(100) | Not Null | Tên ngân hàng nhận tiền |
+| `bank_account` | String(50) | Not Null | Số tài khoản nhận tiền |
+| `bank_owner` | String(255) | Not Null | Tên chủ tài khoản nhận tiền |
+| `note` | Text | Nullable | Ghi chú yêu cầu từ Affiliate |
+| `admin_note` | Text | Nullable | Lý do từ chối hoặc ghi chú giao dịch từ Admin |
+| `created_at` | DateTime | Index, Default: func.now() | Thời điểm tạo yêu cầu |
+| `processed_at` | DateTime | Index, Nullable | Thời điểm admin phê duyệt/từ chối |
+
+---
+
+### 2.6. Phân hệ Chat Hỗ trợ AI & Admin (Chat Module)
+
+#### Bảng `chat_sessions` (Phiên chat hỗ trợ)
+*Lưu trữ phiên hội thoại chat giữa người dùng (hoặc khách) với AI/Nhân viên.*
+
+| Thuộc tính | Kiểu dữ liệu | Ràng buộc | Mô tả |
+| :--- | :--- | :--- | :--- |
+| `id` | Integer | PK, Auto | ID tự tăng |
+| `user_id` | Integer | FK -> `users.id`, Index, Nullable | ID người dùng nếu đã đăng nhập |
+| `source` | Enum | Index, Default: 'web' | Kênh chat: `web`, `zalo`, `facebook` |
+| `status` | Enum | Index, Default: 'open' | Trạng thái phiên: `open` (đang trò chuyện), `closed` (đã kết thúc), `transferred` (chuyển giao cho hỗ trợ viên thực tế) |
+| `guest_name` | String(255) | Nullable | Tên tạm thời của khách vãng lai |
+| `guest_phone` | String(20) | Index, Nullable | Số điện thoại khách vãng lai cung cấp |
+| `access_token_hash`| String(64) | Index, Nullable | Hash token truy cập phục vụ xác thực khách |
+| `last_message_at` | DateTime | Index, Default: func.now() | Thời điểm gửi/nhận tin nhắn cuối |
+
+#### Bảng `chat_messages` (Nội dung tin nhắn chi tiết)
+*Lưu trữ chi tiết các tin nhắn trong các phiên chat.*
+
+| Thuộc tính | Kiểu dữ liệu | Ràng buộc | Mô tả |
+| :--- | :--- | :--- | :--- |
+| `id` | Integer | PK, Auto | ID tự tăng |
+| `session_id` | Integer | FK -> `chat_sessions.id`, Index, Not Null| Thuộc phiên chat nào |
+| `sender_type` | Enum | Index, Not Null | Đối tượng gửi: `user` (khách), `bot` (AI Assistant), `admin` (nhân viên hỗ trợ) |
+| `message_content` | Text | Nullable | Nội dung tin nhắn dạng văn bản |
+| `intent` | String(100) | Index, Nullable | Ý định phân tích của tin nhắn (với bot) |
+| `product_ids` | JSON | Nullable | Danh sách ID sản phẩm được nhắc tới / gợi ý |
+| `is_handoff_to_admin`| Boolean| Index, Default: False | Đánh dấu yêu cầu chuyển gặp admin thực tế |
+| `metadata` | JSON | Nullable | Lưu metadata đi kèm tin nhắn (lưu dưới cột `metadata`) |
+
+---
+
+### 2.7. Phân hệ Đăng ký Nhận tin (Newsletter Module)
+
+#### Bảng `newsletter_subscriptions` (Đăng ký email khuyến mại)
+*Lưu các địa chỉ email đăng ký nhận tin tức khuyến mãi mới từ website.*
+
+| Thuộc tính | Kiểu dữ liệu | Ràng buộc | Mô tả |
+| :--- | :--- | :--- | :--- |
+| `id` | Integer | PK, Auto | ID tự tăng |
+| `email` | String(255) | Unique, Index, Not Null | Email đăng ký |
+| `source` | String(50) | Index, Default: "website" | Kênh đăng ký |
+| `status` | String(20) | Index, Default: "active" | Trạng thái đăng ký (`active`, `unsubscribed`) |
+| `subscribed_at` | DateTime | Index, Default: func.now() | Thời điểm đăng ký nhận tin |
+| `unsubscribed_at`| DateTime | Index, Nullable | Thời điểm hủy đăng ký nhận tin |
+| `updated_at` | DateTime | | Ngày cập nhật |
